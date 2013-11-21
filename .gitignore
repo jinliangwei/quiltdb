@@ -1,0 +1,30 @@
+# Ignore build paths
+bin/
+lib/
+third_party_installed/
+
+# Instead of ignoring the entire third_party/, ignore individual library to
+# look out for new library addition.
+third_party/gflags-2.0/
+third_party/glog-0.3.3/
+third_party/libunwind-1.1/
+third_party/zeromq-3.2.3/
+third_party/boost_1_54_0/
+external_testbed/third_party/
+
+# Default ignore files for C++ project. See
+# https://github.com/github/gitignore/blob/master/C%2B%2B.gitignore
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
