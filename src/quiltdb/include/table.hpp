@@ -2,6 +2,8 @@
 #define __QUILTDB_TABLE_HPP__
 
 #include <stdint.h>
+#include <boost/shared_ptr.hpp>
+
 #include <quiltdb/internal_table/internal_table.hpp>
 
 namespace quiltdb {
@@ -20,20 +22,21 @@ public:
   
   // do vadd_func_(value, _delta);
   template<typename ValueType>
-  void Inc(ValueType _delta){
-    internal_table_->Inc<ValueType>(_delta);
+  void Inc(int64_t _key, ValueType _delta){
+    internal_table_->Inc<ValueType>(_key, _delta);
   }
 
   int32_t GetID(){
-    return internal_table->GetID();
+    return internal_table_->GetID();
   }
 
 private:
   // called by QuiltDB to create Table
-  Table(InternalTable *_internal_table):
-    internal_table_(_internal_table);
+  Table(int32_t _table_id, const TableConfig &_config){
+    internal_table_.reset(new InternalTable(_table_id, _config));
+  }
 
-  InternalTable *internal_table_;
+  boost::shared_ptr<InternalTable> internal_table_;
 
   friend class QuiltDB;
 };

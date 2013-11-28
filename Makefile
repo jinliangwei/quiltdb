@@ -4,18 +4,16 @@
 PROJ_DIR := $(shell readlink $(dir $(lastword $(MAKEFILE_LIST))) -f)
 
 SRC = $(PROJ_DIR)/src
+QUILTDB_SRC = $(SRC)/quiltdb
 THIRD_PARTY = $(PROJ_DIR)/third_party
 THIRD_PARTY_INSTALLED = $(PROJ_DIR)/third_party_installed
 BIN = $(PROJ_DIR)/bin
-TESTS_DIR = $(PROJ_DIR)/tests
 
 CXX = g++
-INCFLAGS = -I$(THIRD_PARTY_INSTALLED)/include -I$(SRC) \
-	-L$(THIRD_PARTY_INSTALLED)/lib
+INCFLAGS = -I$(THIRD_PARTY_INSTALLED)/include -I$(SRC)
+LIBFLAGS = -L$(THIRD_PARTY_INSTALLED)/lib
 
-CPPFLAGS = -g -O2 -Wno-strict-aliasing -std=c++0x \
-	 -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc \
-	 -fno-builtin-free
+CPPFLAGS = -g -O3
 
 # all builds third party libraries and petuum
 all: quiltdb

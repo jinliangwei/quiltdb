@@ -10,7 +10,7 @@ namespace quiltdb {
 class NanoTimer{
 
   // true if time continue, false if timer stop
-typedef bool (TimerHandler *)(void *);
+typedef bool (*TimerHandler)(void *);
 
 public:
   NanoTimer(zmq::context_t *_zmq_ctx);
@@ -18,10 +18,6 @@ public:
   int Start(int32_t _interval, TimerHandler _handler, void *_handler_argu);
 
   int Stop();
-
-private:
-  zmq::socket_t stop_pull_sock_;
-  
 
 };
 

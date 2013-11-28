@@ -3,6 +3,7 @@
 
 #include <boost/unordered_map.hpp>
 #include "table.hpp"
+
 #include <quiltdb/propagator/propagator.hpp>
 #include <quiltdb/receiver/receiver.hpp>
 #include <string>
@@ -14,8 +15,6 @@ struct DBConfig{
   std::string my_ip_;
   std::string hport_prop_;
   std::string vport_prop_;
-  std::string hport_recv_;
-  std::string vport_recv_;
 
   NodeInfo hnode_info_; // the horizontal downstream node
   NodeInfo vnode_info_;
@@ -36,8 +35,9 @@ public:
   // make QuiltDB a singleton
   static QuiltDB &CreateQuiltDB(DBConfig &_dbconfig);
   
-  Table &CreateTable(int32_t _table_id, const TableConfig &_table_config);
-  
+  Table CreateHTable(int32_t _table_id, const TableConfig &_table_config);
+  Table CreateVTable(int32_t _table_id, const TableConfig &_table_config);
+
   int ShutDown();
 
 private:
@@ -48,6 +48,8 @@ private:
   Propagator vpropagator_;
   Receiver hreceiver_;
   Receiver vreceiver_;
+
+  DBConfig config_;
 
   // When Quite
 
