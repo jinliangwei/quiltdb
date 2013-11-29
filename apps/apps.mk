@@ -9,7 +9,7 @@ QUILTDB_APP_ST_LIBS = -Wl,-Bstatic -lzmq -lboost_thread -lboost_system \
 QUILTDB_SRC_CPP = $(QUILTDB_SRC)/include/quiltdb.cpp \
 	$(QUILTDB_SRC)/internal_table/internal_table.cpp \
 	$(QUILTDB_SRC)/propagator/propagator.cpp \
-	$(QUILTDB_SRC)/propagator/timer_thr.cpp \
+	$(QUILTDB_SRC)/utils/timer_thr.cpp \
 	$(QUILTDB_SRC)/receiver/receiver.cpp \
 	$(QUILTDB_SRC)/utils/memstruct.cpp \
 	$(QUILTDB_SRC)/utils/zmq_util.cpp

@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <tbb/concurrent_hash_map.h>
-#include <boost/shared_array.hpp>
+#include <string.h>
 #include <quiltdb/utils/memstruct.hpp>
 
 namespace quiltdb {
@@ -17,11 +17,13 @@ struct TableConfig{
 
   ValueAddFunc vadd_func_;
   ValueSubFunc vsub_func_;
-  
 };
 
 class InternalTable {
 public:
+
+  InternalTable(int32_t _table_id, const TableConfig &_table_config);
+  ~InternalTable();
 
   template<typename ValueType>
   ValueType Get(int64_t _key);
@@ -31,8 +33,6 @@ public:
   void Inc(int64_t _key, ValueType _delta);
 
   int32_t GetID();
-
-  InternalTable(int32_t _table_id, const TableConfig &_table_config);
   
   // called by Receiver to apply a set of updates
   int ApplyUpdates(UpdateBuffer *_updates, int32_t _num_bytes);
@@ -50,50 +50,51 @@ public:
   int32_t vsize_;
   ValueAddFunc vadd_func_;
   ValueSubFunc vsub_func_;
-
-  tbb::concurrent_hash_map<int64_t, boost::shared_array<uint8_t> > storage_;
+  
+  uint8_t *default_v_;
+  tbb::concurrent_hash_map<int64_t, uint8_t*> storage_;
 
 };
 
 template<typename ValueType>
 ValueType InternalTable::Get(int64_t _key){
   
-  tbb::concurrent_hash_map<int64_t, boost::shared_array<uint8_t> >::const_accessor
+  tbb::concurrent_hash_map<int64_t, uint8_t*>::const_accessor
     value_acc;
   
   if(storage_.find(value_acc, _key)){
-    return *(reinterpret_cast<ValueType *>(value_acc->second.get()));
+    return *(reinterpret_cast<ValueType *>(value_acc->second));
   }
 
   // not found the key, create it
-  tbb::concurrent_hash_map<int64_t, boost::shared_array<uint8_t> >::accessor
+  tbb::concurrent_hash_map<int64_t, uint8_t*>::accessor
     insert_value_acc;
   
   // Someone might have gained the lock and inserted the key.
-  if(storage_.insert(insert_value_acc, _key)){    
-    (insert_value_acc->second).reset(
-				 reinterpret_cast<uint8_t *>(new ValueType()));
+  if(storage_.insert(insert_value_acc, _key)){
+    insert_value_acc->second = new uint8_t[sizeof(ValueType)];
+    memset(insert_value_acc->second, 0, sizeof(ValueType));
   }
   
-  return *(reinterpret_cast<ValueType *>(insert_value_acc->second.get()));
+  return *(reinterpret_cast<ValueType *>(insert_value_acc->second));
 
 }
 
 template<typename ValueType>
 void InternalTable::Inc(int64_t _key, ValueType _delta){
   
-  tbb::concurrent_hash_map<int64_t, boost::shared_array<uint8_t> >::accessor
+  tbb::concurrent_hash_map<int64_t, uint8_t* >::accessor
     value_acc;
     
   // if the key does not exist, insert it and initialize the value;
   // if it exists, that takes no effect
 
   if(storage_.insert(value_acc, _key)){
-    value_acc->second.reset(
-			     reinterpret_cast<uint8_t *>(new ValueType()));
+    value_acc->second = new uint8_t[sizeof(ValueType)];
+    memset(value_acc->second, 0, sizeof(ValueType));
   }
-  uint8_t *value_ptr = (value_acc->second).get();
-  uint8_t *delta_ptr = reinterpret_cast<uint8_t *>(&_delta);
+  uint8_t *value_ptr = value_acc->second;
+  uint8_t *delta_ptr = reinterpret_cast<uint8_t*>(&_delta);
   
   vadd_func_(value_ptr, delta_ptr, vsize_);
 }

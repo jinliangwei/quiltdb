@@ -38,6 +38,7 @@ public:
   Table CreateHTable(int32_t _table_id, const TableConfig &_table_config);
   Table CreateVTable(int32_t _table_id, const TableConfig &_table_config);
 
+  int Start();
   int ShutDown();
 
 private:
@@ -50,7 +51,8 @@ private:
   Receiver vreceiver_;
 
   DBConfig config_;
-
+  bool started_;
+  
   // When Quite
 
 };
