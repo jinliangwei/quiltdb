@@ -15,4 +15,12 @@ int Receiver::RegisterTable(InternalTable *_itable){
 int Receiver::CommitUpdates(int32_t _table_id, UpdateBuffer *_updates){
   return 0;
 }
+
+int Receiver::SignalTerm(){
+  return 0;
+}
+
+int Receiver::WaitTerm(){
+  return 0;
+}
 }

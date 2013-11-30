@@ -2,7 +2,6 @@
 #define __QUILTDB_TABLE_HPP__
 
 #include <stdint.h>
-#include <boost/shared_ptr.hpp>
 
 #include <quiltdb/internal_table/internal_table.hpp>
 
@@ -10,13 +9,14 @@ namespace quiltdb {
 
 class QuiltDB;
 
+// Allow copying.
 class Table {
 public:
 
   // Public functions in this class are all concurrent.
-  
   template<typename ValueType>
   ValueType Get(int64_t _key){
+    std::cout << "here";
     return internal_table_->Get<ValueType>(_key);
   }
   
@@ -30,14 +30,18 @@ public:
     return internal_table_->GetID();
   }
 
-private:
-  // called by QuiltDB to create Table
-  Table(int32_t _table_id, const TableConfig &_config){
-    internal_table_.reset(new InternalTable(_table_id, _config));
+  Table(){}
+
+  Table(const Table &_table):
+    internal_table_(_table.internal_table_){}
+
+  Table operator=(const Table &_table){
+    this->internal_table_ = _table.internal_table_;
   }
 
-  boost::shared_ptr<InternalTable> internal_table_;
+private:
 
+  InternalTable *internal_table_;
   friend class QuiltDB;
 };
 

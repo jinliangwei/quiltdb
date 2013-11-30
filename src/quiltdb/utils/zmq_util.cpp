@@ -2,7 +2,7 @@
 #include "zmq_util.hpp"
 #include <glog/logging.h>
 
-namespace petuum {
+namespace quiltdb {
 
   int32_t CidToZmqRid(int32_t cid){
     return (cid << 4 | 0x1);

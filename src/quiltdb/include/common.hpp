@@ -14,5 +14,6 @@ struct NodeInfo{
 
 };
 
+enum UpdateType{EInc};
 
 #endif

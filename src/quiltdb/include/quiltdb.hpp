@@ -39,12 +39,24 @@ public:
   Table CreateVTable(int32_t _table_id, const TableConfig &_table_config);
 
   int Start();
+
+  
+  // ShutDown() blocks until QuiltDB completes proper ShutDown protocol with its
+  // neighbors (essentially, its neighbors have called ShutDown too). After it 
+  // returns, the process may exit anytime.
+  // The application is responsible for determining the termination condition as
+  // when ShutDown() is called, the message ring may be broken as soon as all 
+  // neighbors call ShutDown().
   int ShutDown();
 
 private:
 
-  QuiltDB(DBConfig &_dbconfig);
+  int CreateTable(int32_t _table_id, const TableConfig &_table_config, 
+		    Table *_table);
 
+  QuiltDB(DBConfig &_dbconfig);
+  ~QuiltDB();
+  
   Propagator hpropagator_;
   Propagator vpropagator_;
   Receiver hreceiver_;
@@ -52,9 +64,7 @@ private:
 
   DBConfig config_;
   bool started_;
-  
-  // When Quite
-
+  boost::unordered_map<int32_t, InternalTable*> table_dir_;
 };
 
 }

@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <tbb/concurrent_hash_map.h>
 #include <string.h>
+#include <glog/logging.h>
+#include <iostream>
+
 #include <quiltdb/utils/memstruct.hpp>
 
 namespace quiltdb {
