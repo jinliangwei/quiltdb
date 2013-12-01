@@ -15,27 +15,31 @@ namespace quiltdb {
  * This format relies on 0mq's multi-part message.
  */
 
-enum PropagatorMsgType{EPUpdateLog, EPUpdateBuffer, EPTerminate};
+// messages to be received by propagator via inter-thread sock
+enum PropagatorMsgType{EPUpdateLog, EPUpdateBuffer, EPInternalTerminate, 
+		       EPRecvInternalTerminateAck};
 
-struct EPUpdateLogMsg {
+struct PUpdateLogMsg {
   PropagatorMsgType msgtype_;
   int32_t table_id_;
   int64_t key_;
-  UpdateType uptype_;
+  UpdateType update_type_;
 };
 
-struct EPUpdateBufferMsg {
+struct PUpdateBufferMsg {
   PropagatorMsgType msgtype_;
   UpdateBuffer *update_buffer_ptr_;
 };
 
+// messages to be received by propagator or receiver via TCP sock
 enum PropRecvMsgType{EPRUpdateBuffer, EPRTerminate, EPRTerminateAck};
 
-enum ReceiverMsgType{ERTerminate};
+// messages to be received by receiver via inter-thread sock
+enum ReceiverMsgType{ERInternalTerminate, EPRInternalTerminate};
 
 enum TimerMsgType{ETimerTrigger, ETimerCmd};
 
-struct ETimerCmdMsg{
+struct TimerCmdMsg{
   TimerMsgType msgtype_;
   int32_t nanosec_;
 };

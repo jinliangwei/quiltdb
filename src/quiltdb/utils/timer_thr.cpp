@@ -25,8 +25,9 @@ int NanoTimer::Start(int32_t _interval, TimerHandler _handler,
   return 0;
 }
 
-int NanoTimer::Stop(){
+int NanoTimer::WaitStop(){
   if(!started_) return -1;
+  
   pthread_join(thr_, NULL);
   started_ = false;
   return 0;
@@ -35,6 +36,7 @@ int NanoTimer::Stop(){
 void *NanoTimer::TimerThreadMain(void *argu){
   TimerThrInfo *tinfo = reinterpret_cast<TimerThrInfo*>(argu);
   int32_t interval = tinfo->interval_;
+  VLOG(0) << "timer thread started";
   while(1){
     timespec req;
     req.tv_sec = 0;
@@ -42,10 +44,10 @@ void *NanoTimer::TimerThreadMain(void *argu){
     timespec rem;
     
     int ret = nanosleep(&req, &rem);
-    
     interval = tinfo->callback_(tinfo->handler_argu_, rem.tv_nsec);
     if(interval <= 0) break;
   }
+  VLOG(0) << "timer thread exiting";
   return 0;
 }
 

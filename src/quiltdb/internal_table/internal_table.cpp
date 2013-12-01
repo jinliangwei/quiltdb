@@ -25,12 +25,4 @@ int InternalTable::ApplyUpdates(UpdateBuffer *_udpates, int32_t _num_bytes){
   return 0;
 }
 
-int InternalTable::Sub(uint8_t * _v, const uint8_t* _delta, int32_t _num_bytes){
-  return 0;
-}
-
-int InternalTable::Add(uint8_t *_v, const uint8_t* _v2, int32_t _num_bytes){
-  return 0;
-}
-
 }

@@ -5,6 +5,8 @@
 #include <string>
 
 // a set of data structures that are shared among varios components
+typedef int (*ValueAddFunc)(uint8_t *, uint8_t *, int32_t);
+typedef int (*ValueSubFunc)(uint8_t *, uint8_t *, int32_t);
 
 struct NodeInfo{
   

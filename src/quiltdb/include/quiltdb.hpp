@@ -4,8 +4,8 @@
 #include <boost/unordered_map.hpp>
 #include "table.hpp"
 
-#include <quiltdb/propagator/propagator.hpp>
-#include <quiltdb/receiver/receiver.hpp>
+#include <quiltdb/comm/propagator.hpp>
+#include <quiltdb/comm/receiver.hpp>
 #include <string>
 
 namespace quiltdb {
@@ -22,8 +22,8 @@ struct DBConfig{
   // How long should horizontal and vertical propagation thread should 
   // wait between propagation.
   // <= 0 means no waiting.
-  int32_t hbatch_nano_sec_;
-  int32_t vbatch_nano_sec_;
+  int32_t hbatch_nanosec_;
+  int32_t vbatch_nanosec_;
 
 };
 
@@ -64,7 +64,9 @@ private:
 
   DBConfig config_;
   bool started_;
+  int errcode_;
   boost::unordered_map<int32_t, InternalTable*> table_dir_;
+  zmq::context_t *zmq_ctx_;
 };
 
 }

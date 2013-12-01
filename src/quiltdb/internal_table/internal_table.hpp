@@ -8,11 +8,10 @@
 #include <iostream>
 
 #include <quiltdb/utils/memstruct.hpp>
+#include <quiltdb/include/common.hpp>
+#include <quiltdb/comm/propagator.hpp>
 
 namespace quiltdb {
-
-typedef int (*ValueAddFunc)(uint8_t *, uint8_t *, int32_t);
-typedef int (*ValueSubFunc)(uint8_t *, uint8_t *, int32_t);
 
 struct TableConfig{
 
@@ -40,15 +39,18 @@ public:
   // called by Receiver to apply a set of updates
   int ApplyUpdates(UpdateBuffer *_updates, int32_t _num_bytes);
 
-  // called by Receiver to remove my own updates
-  // do vsub_func(_v, _delta);
-  int Sub(uint8_t * _v, const uint8_t* _delta, int32_t _num_bytes);
+  ValueAddFunc get_vadd_func(){
+    return vadd_func_;
+  }
+  ValueSubFunc get_vsub_func(){
+    return vsub_func_;
+  }
 
-  // called by Aggretator
-  // do vadd_func(_delta, _delta);
-  // must _num_bytes == sizeof(ValueType)
-  int Add(uint8_t *_v, const uint8_t* _v2, int32_t _num_bytes);  
+  void set_propagator(Propagator *_prop){
+    propagator = _prop;
+  }
 
+private:
   int32_t table_id_;
   int32_t vsize_;
   ValueAddFunc vadd_func_;
@@ -56,7 +58,8 @@ public:
   
   uint8_t *default_v_;
   tbb::concurrent_hash_map<int64_t, uint8_t*> storage_;
-
+  
+  Propagator *propagator;
 };
 
 template<typename ValueType>
@@ -100,6 +103,8 @@ void InternalTable::Inc(int64_t _key, ValueType _delta){
   uint8_t *delta_ptr = reinterpret_cast<uint8_t*>(&_delta);
   
   vadd_func_(value_ptr, delta_ptr, vsize_);
+
+  propagator->Inc(table_id_, _key, (uint8_t *) &_delta, sizeof(ValueType));
 }
 
 }

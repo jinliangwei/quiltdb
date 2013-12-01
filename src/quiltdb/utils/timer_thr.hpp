@@ -24,7 +24,7 @@ public:
 
   int Start(int32_t _interval, TimerHandler _handler, void *_handler_argu);
 
-  int Stop();
+  int WaitStop();
 
 private:
   static void *TimerThreadMain(void *argu);

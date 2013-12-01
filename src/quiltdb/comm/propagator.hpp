@@ -3,8 +3,6 @@
 
 #include <quiltdb/include/common.hpp>
 #include <quiltdb/utils/memstruct.hpp>
-#include <quiltdb/receiver/receiver.hpp>
-#include <quiltdb/internal_table/internal_table.hpp>
 
 #include <string>
 #include <zmq.hpp>
@@ -22,7 +20,8 @@ struct PropagatorConfig {
   int32_t nanosec_;
   NodeInfo my_info_;
   zmq::context_t *zmq_ctx_;
-  std::string update_push_endp_;
+  std::string update_pull_endp_;
+  std::string recv_pull_endp_;
 };
 
 class Propagator : boost::noncopyable {
@@ -34,7 +33,7 @@ class Propagator : boost::noncopyable {
     NodeInfo my_info_;
   };
 
-  enum PropagatorState{INIT, RUN, TERM_SELF, TERM_DOWNSTREAM, TERM};
+  enum PropagatorState{INIT, RUN, TERM_PREP, TERM};
 
   /* 
    * Propagator state transition and termination logic
@@ -48,67 +47,71 @@ class Propagator : boost::noncopyable {
    * the propagator, the propagator will not send any more message from the 
    * propagator.
    * 
+   * To ensure the propagator thread properly terminates, it must ensure it will
+   * not receive messages from 1) application threads, 2) receiver thread and 
+   * 3) timer thread. 
+   *
    * The whole logic is to cope with 0MQ to ensure when threads exit, there's no
    * unprocessed message in its sockets so sockets can be shutdown properly.
-   *
+   * 
    * Propagator State Transition Diagram:
    *
-   * INIT --> RUN --> TERM_SELF -----------> TERM
-   *            |                             ^
-   *            '---> TERM_DOWNSTREAM --------'
+   * INIT --> RUN --> TERM_PREP --> TERM
    *
    * Meaning of different states:
    * INIT: created but not yet started, allows initialization (register tables)
    * RUN: running, accepts updates from applcation threads and propagate them
-   * TERM_SELF: application acknowledges that it is prepared to accept 
+   * TERM_PREP: application acknowledges that it is prepared to accept 
    *            propagator tear down at anytime -- that is, the propagator may 
    *            turn to TERM state any time and stop propagating updates of 
    *            itself and others'
-   * TERM_DOWNSTREAM: downstream process is ready to terminate and is waiting 
-   *                  for permission
    * TERM: terminated, no more operation
    *
    * Transition triggers:
    * INIT --> RUN: Start()
-   * RUN --> TERM_SELF: SignalTerm()
-   * RUN --> TERM_DOWNSTREAM: recieved termination message from downstream 
-   *                          receiver
-   * TERM_SELF --> TERM: same as RUN --> TERM_DOWNSTREAM
-   * TERM_DOWNSTREAM --> TERM: same as RUN --> TERM_SELF
-   * When transitting to TERM, send termination ackonwledgement to downstream
-   * receiver.
+   * RUN --> TERM_PREP: SignalTerm()
+   * TERM_PREP --> TERM: have received termination message from downstream 
+   *                     receiver and receiver thread has ackonwledged 
+   *                     termination
    * 
-   * Basically, the propagator can terminate if it receives:
-   * 1) SignalTerm() and
-   * 2) termination message from its downstream receiver
-   *
    * Actions permitted for each state:
-   * INIT: RegisterTable(), Start()
-   * RUN: Inc(), ApplyUpdates(), SignalTerm(), GetErrCode()
-   * TERM_SELF: Inc(), ApplyUpdates(), WaitTerm(), GetErrCode()
-   * TERM_DOWNSTREAM: Inc(), ApplyUpdates(), SingalTerm(), GetErrCode()
-   * TERM: GetErrCode()
+   * INIT: RegisterTable(), Start(), GetErrCode()
+   * RUN: Inc(), SignalTerm(), WaitTerm(), GetErrCode()
+   * TERM_PREP: WaitTerm(), GetErrCode()
+   * TERM: WaitTerm(), GetErrCode()
    */
 
 public:
   Propagator();
   ~Propagator();
+  
+  // this function can not block as the main thread needs to start
+  // other propagator and receiver too
   int Start(PropagatorConfig &_config, sem_t *_sync_sem);
-  int RegisterTable(int32_t _table_id, InternalTable *_itable);
+  void RegisterTable(int32_t _table_id, ValueAddFunc vadd_func);
+  // conurrent API, others are not
   int Inc(int32_t _table_id, int32_t _key, const uint8_t *_delta, 
 	  int32_t _num_bytes);
-  int ApplyUpdates(int32_t _table_id, UpdateBuffer *_updates);
+  // Once this is called, application threads should not send in anymore updates
+  // 
   int SignalTerm();
   int WaitTerm();
   int GetErrCode();
   
 private:
+  // These are updates that has been sent out, which should be subtracted from 
+  // received updates.
+  static int CommitUpdates(int32_t _table_id, UpdateBuffer *_updates);
+  static int StopLocalReceiver();
+
   static int32_t TimerHandler(void * _propagator, int32_t _rem);
   static void *PropagatorThrMain(void *_argu);
 
   int32_t TimerTrigger();
   
+  PropagatorThrInfo thrinfo_;
   pthread_t thr_;
+  bool have_signaled_term_;
 
   // write by propagator thread, read by application threads
   volatile PropagatorState state_;
@@ -128,14 +131,13 @@ private:
   
   // access by application threads before propagator thread starts running
   // for RegisterTable()
-  boost::unordered_map<int32_t, InternalTable* > table_dir_;
-  boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > > 
-  update_store_;
+  boost::unordered_map<int32_t, ValueAddFunc> table_dir_;
   
   boost::thread_specific_ptr<zmq::socket_t> timer_push_sock_;
-
   // PULL sock for timer thread to receive cmd
   boost::thread_specific_ptr<zmq::socket_t> timer_recv_sock_;
+  
+  boost::thread_specific_ptr<zmq::socket_t> update_push_sock_;
 };
 
 }
