@@ -479,8 +479,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		      << " table " << table_iter->first
 		      << " key " << update_iter->first
 		      << " delta " << update_iter->second << std::endl;
-	      delete update_iter->second;
-	      update_iter->second = 0;
+	      delete[] update_iter->second;
+	      table_iter->second.erase(update_iter);
 	    }
 	  }
 	}

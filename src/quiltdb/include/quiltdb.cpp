@@ -83,6 +83,7 @@ int QuiltDB::Start(){
   //sem_wait(&sync_sem);
   
   VLOG(0) << "successfully started";
+  sem_destroy(&sync_sem);
 
   return 0;
 }
