@@ -80,7 +80,7 @@ namespace quiltdb {
     try{
       VLOG(3) << "SendMsg single data, data = " << (void *) data 
 		<< " len = " << len << " flag = " << flag;
-      nbytes = sock.send(data, len, flag | ZMQ_DONTWAIT);
+      nbytes = sock.send(data, len, flag);
     }catch(zmq::error_t &e){
       VLOG(2) << "Send failed, e.what() = " << e.what();
       return -1;

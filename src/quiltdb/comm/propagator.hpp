@@ -81,24 +81,65 @@ class Propagator : boost::noncopyable {
    * TERM: WaitTerm(), GetErrCode()
    */
 
+
+  /*
+   * Receiver-driven termination protocol
+   * We need a termination protocol to properly terminate receiver and sender 
+   * because we need to make sure all messages get properly processed.
+   * In our model, one sender has only one receiver, one receiver may have 
+   * multiple propagators.
+   * The protocol assumes the ordering of the messages. That is, if A sends 
+   * message 1 before sending message 2 to B, it is guaranteed that B sees 
+   * message 1 before message 2.
+   * Note that one agent may paly two roles at the same time, then it must
+   * complete the protocol as both side before exising. Our sender-receiver 
+   * pairs:
+   * 1. internal receiver -> propagator
+   * 2. propagator -> receiver
+   *
+   * The protocol:
+   * 1. Receiver sends to a Termination message to sender.
+   * 2. After sender sees the message and the sender is ready to stop sending 
+   * messages, sender sends a termination ACK to receiver. After sending the 
+   * ACK, the send promises to not send any more messages to receiver.
+   *
+   * Terminating timer does not follow this protocl because timer message 
+   * sending and receiving happens in lock steps. Timer does not start counting 
+   * until the current callback returns.
+   * 
+   */
+
 public:
   Propagator();
   ~Propagator();
   
+  void RegisterTable(int32_t _table_id, ValueAddFunc vadd_func,
+		     int32_t _update_size);
+
   // this function can not block as the main thread needs to start
   // other propagator and receiver too
   int Start(PropagatorConfig &_config, sem_t *_sync_sem);
-  void RegisterTable(int32_t _table_id, ValueAddFunc vadd_func);
+
+  int RegisterThr();
+
   // conurrent API, others are not
   int Inc(int32_t _table_id, int32_t _key, const uint8_t *_delta, 
 	  int32_t _num_bytes);
   // Once this is called, application threads should not send in anymore updates
   // 
   int SignalTerm();
+
+  int DeregisterThr();
+
   int WaitTerm();
   int GetErrCode();
   
 private:
+  struct UpdateRange{
+    int64_t st_;
+    int64_t end_;
+  };
+
   // These are updates that has been sent out, which should be subtracted from 
   // received updates.
   static int CommitUpdates(int32_t _table_id, UpdateBuffer *_updates);
@@ -106,8 +147,6 @@ private:
 
   static int32_t TimerHandler(void * _propagator, int32_t _rem);
   static void *PropagatorThrMain(void *_argu);
-
-  int32_t TimerTrigger();
   
   PropagatorThrInfo thrinfo_;
   pthread_t thr_;
@@ -132,6 +171,7 @@ private:
   // access by application threads before propagator thread starts running
   // for RegisterTable()
   boost::unordered_map<int32_t, ValueAddFunc> table_dir_;
+  boost::unordered_map<int32_t, int32_t> table_update_size_;
   
   boost::thread_specific_ptr<zmq::socket_t> timer_push_sock_;
   // PULL sock for timer thread to receive cmd

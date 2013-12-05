@@ -18,7 +18,7 @@ QuiltDB::~QuiltDB(){
     delete table_itr->second;
     table_itr->second = 0;
   }    
-
+  if(zmq_ctx_ != 0) delete zmq_ctx_;
 }
 
 QuiltDB &QuiltDB::CreateQuiltDB(DBConfig &_dbconfig){
@@ -38,7 +38,8 @@ Table QuiltDB::CreateHTable(int32_t _table_id, const TableConfig &_table_config)
   
   int ret = CreateTable(_table_id, _table_config, &table);
   
-  hpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func());
+  hpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func(),
+			     table.internal_table_->vsize_);
   table.internal_table_->set_propagator(&hpropagator_);
   VLOG(0) << "successfully created htable " << _table_id;
   // TODO: register table with receiver
@@ -51,7 +52,8 @@ Table QuiltDB::CreateVTable(int32_t _table_id, const TableConfig &_table_config)
 
   int ret = CreateTable(_table_id, _table_config, &table);
   
-  vpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func());
+  vpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func(),
+			     table.internal_table_->vsize_);
   table.internal_table_->set_propagator(&vpropagator_);
   // TODO: register table with receiver
   return table;
@@ -85,6 +87,18 @@ int QuiltDB::Start(){
   VLOG(0) << "successfully started";
   sem_destroy(&sync_sem);
 
+  return 0;
+}
+
+int QuiltDB::RegisterThr(){
+  if(hpropagator_.RegisterThr() < 0) return -1;
+  //if(vpropagator_.RegisterThr() < 0) return -1;
+  return 0;
+}
+
+int QuiltDB::DeregisterThr(){
+  if(hpropagator_.DeregisterThr() < 0) return -1;
+  //if(vpropagator_.DeregisterThr() < 0) return -1;
   return 0;
 }
 

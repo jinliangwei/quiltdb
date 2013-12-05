@@ -31,6 +31,7 @@ public:
   bool GetNodeRange(int32_t _node_id, int64_t *_key_st, int64_t *_key_end);
 
   int32_t get_update_size();
+  int32_t get_buff_size();
 
 private:
   int32_t buff_size_;

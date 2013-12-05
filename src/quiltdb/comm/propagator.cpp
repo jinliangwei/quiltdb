@@ -11,40 +11,37 @@
 namespace quiltdb {
 
 namespace {
+
 inline int InitThrSockIfHaveNot(boost::thread_specific_ptr<zmq::socket_t> *_sock,
-			     zmq::context_t *_zmq_ctx, int _type,
-			     const char *_connect_endp){
+				zmq::context_t *_zmq_ctx, int _type,
+				const char *_connect_endp){
   if(_sock->get() == NULL){
     try{
       // zmq::socket_t() may throw error_t
       _sock->reset(new zmq::socket_t(*_zmq_ctx, _type));
-    }catch(...){
-      return -1;
-    }
-    try{
       (*_sock)->connect(_connect_endp);	  
     }catch(zmq::error_t &e){
       VLOG(0) << "connect failed, e.what() = " << e.what();
+      return -1;
+    }catch(...){
       return -1;
     }
   }
   return 0;
-}
 
+}
 inline int InitScopedSockIfHaveNot(boost::scoped_ptr<zmq::socket_t> *_sock,
-			     zmq::context_t *_zmq_ctx, int _type,
-			     const char *_connect_endp){
+				   zmq::context_t *_zmq_ctx, int _type,
+				   const char *_connect_endp){
   if(_sock->get() == NULL){
     try{
       // zmq::socket_t() may throw error_t
       _sock->reset(new zmq::socket_t(*_zmq_ctx, _type));
-    }catch(...){
-      return -1;
-    }
-    try{
       (*_sock)->connect(_connect_endp);	  
     }catch(zmq::error_t &e){
       VLOG(0) << "connect failed, e.what() = " << e.what();
+      return -1;
+    }catch(...){
       return -1;
     }
   }
@@ -79,43 +76,59 @@ int Propagator::Start(PropagatorConfig &_config, sem_t *_sync_sem){
   return 0;
 }
 
-void Propagator::RegisterTable(int32_t _table_id, ValueAddFunc vadd_func){
+void Propagator::RegisterTable(int32_t _table_id, ValueAddFunc vadd_func,
+			       int32_t _update_size){
   table_dir_[_table_id] = vadd_func;
-  
+  table_update_size_[_table_id] = _update_size;
   return;
+}
+
+int Propagator::RegisterThr(){
+  if(state_ != RUN) return -1;
+  if(update_push_sock_.get() != NULL) return -1;
+  
+  try{
+    // zmq::socket_t() may throw error_t
+    update_push_sock_.reset(new zmq::socket_t(*zmq_ctx_, ZMQ_PUSH));
+    update_push_sock_->connect(update_pull_endp_.c_str());
+  }catch(...){
+    return -1;
+  }
+
+  return 0;
+}
+
+int Propagator::DeregisterThr(){
+  // can happen in RUN, TERM_PREP, TERM
+  if(update_push_sock_.get() == NULL) return -1;
+  
+  update_push_sock_.reset();
+  return 0;
+
 }
 
 int Propagator::Inc(int32_t _table_id, int32_t _key, const uint8_t *_delta, 
 		    int32_t _num_bytes){
   if(state_ != RUN) return -1;
+  if(update_push_sock_.get() == NULL) return -1;
 
-  int ret = InitThrSockIfHaveNot(&update_push_sock_, zmq_ctx_, ZMQ_PUSH, 
-				 update_pull_endp_.c_str());
-  if(ret < 0){
-    VLOG(0) << "failed, creating and initializing update_push_sock_"
-	    << " endp = " << update_pull_endp_;
-    errcode_ = 1;
-    return -1;
-  }
-
-  VLOG(3) << "successfully, created and initialized update_push_sock_";
   PUpdateLogMsg updatelog;
   updatelog.msgtype_ = EPUpdateLog;
   updatelog.table_id_ = _table_id;
   updatelog.key_ = _key;
   updatelog.update_type_ = EInc;
 
-  ret = SendMsg(*update_push_sock_, (uint8_t *) &updatelog, 
-		sizeof(PUpdateLogMsg), ZMQ_SNDMORE);
+  int ret = SendMsg(*update_push_sock_, (uint8_t *) &updatelog, 
+		    sizeof(PUpdateLogMsg), ZMQ_SNDMORE);
 
-  if(ret < 0){
+  if(ret != sizeof(PUpdateLogMsg)){
     errcode_ = 1;
     return -1;
   }
 
   ret = SendMsg(*update_push_sock_, _delta, _num_bytes, 0);
 
-  if(ret < 0){
+  if(ret != _num_bytes){
     errcode_ = 1;
     return -1;
   }
@@ -126,19 +139,12 @@ int Propagator::Inc(int32_t _table_id, int32_t _key, const uint8_t *_delta,
 int Propagator::SignalTerm(){
   if(state_ != RUN) return -1;
 
-  int ret = InitThrSockIfHaveNot(&update_push_sock_, zmq_ctx_, ZMQ_PUSH, 
-				 update_pull_endp_.c_str());
-  if(ret < 0){
-    errcode_ = 1;
-    return -1;
-  }
-
   PropagatorMsgType msgtype = EPInternalTerminate;
 
-  ret = SendMsg(*update_push_sock_, (uint8_t *) &msgtype, 
-		sizeof(PropagatorMsgType), 0);
+  int ret = SendMsg(*update_push_sock_, (uint8_t *) &msgtype, 
+		    sizeof(PropagatorMsgType), 0);
 
-  if(ret < 0){
+  if(ret != sizeof(PropagatorMsgType)){
     errcode_ = 1;
     return -1;
   }
@@ -219,6 +225,9 @@ void *Propagator::PropagatorThrMain(void *_argu){
   // received for that table.
   boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > > 
     update_store;
+  boost::unordered_map<int32_t, boost::unordered_map<int32_t, UpdateRange> >
+    table_peers_upate_range;
+  boost::unordered_map<int32_t, UpdateRange> my_update_range;
 
   bool have_received_ds_term = false;
   bool have_stoped_timer_thr = false;
@@ -348,7 +357,31 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  VLOG(0) << "SendMsg to timer_send_sock failed";
 	  propagator_ptr->errcode_ = 1;
 	}
+	
+	boost::unordered_map<int32_t, 
+			     boost::unordered_map<int64_t, uint8_t* > >::iterator
+	  table_iter;
+	for(table_iter = update_store.begin(); table_iter != update_store.end(); 
+	    table_iter++){
+	  int32_t table_id = table_iter->first;
+	  int32_t num_peers = table_peers_update_range[table_id].size();
+	  int32_t update_size = (propagator_ptr->table_update_size_)[table_id];
+	  int32_t num_updates = table_iter->second.size();
+	  UpdateBuffer *update_buff = 
+	    UpdateBuffer::CreateUpdateBuffer(update_size, num_updates, num_peers);
+	  
+	  boost::unordered_map<int64_t, uint8_t*> >::iterator
+	    update_iter;
+	  for(update_iter = table_iter->second.begin(); 
+	      update_iter != table_iter->second.end();
+	      update_iter++){
 
+	  }
+
+	  //TODO: send update buffer to downstream receiver!
+	  UpdateBuffer::DestroyUpdateBuffer(update_buff);
+	  
+	}
 	if(propagator_ptr->state_ == TERM_PREP){
 	  timer.WaitStop();
 	  have_stoped_timer_thr = true;

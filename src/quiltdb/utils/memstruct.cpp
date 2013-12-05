@@ -199,4 +199,8 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
 int32_t UpdateBuffer::get_update_size(){
   return  update_size_;
 }
+
+int32_t UpdateBuffer::get_buff_size(){
+  return buff_size_;
+}
 }

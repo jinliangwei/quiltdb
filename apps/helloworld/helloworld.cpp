@@ -45,6 +45,8 @@ int main(int argc, char *argv[]){
   //quitdb::Table vtable = db.CreateVTable(1, tconfig);
   
   db.Start();
+  int ret = db.RegisterThr();
+  assert(ret == 0);
 
   int a = htable.Get<int>(10);
 
@@ -62,8 +64,10 @@ int main(int argc, char *argv[]){
   req.tv_nsec = 5000000;
   timespec rem;
   
-  int ret = nanosleep(&req, &rem);
+  ret = nanosleep(&req, &rem);
 
   db.ShutDown();
+  db.DeregisterThr();
+  assert(ret == 0);
   return 0;
 }

@@ -39,7 +39,9 @@ public:
   Table CreateVTable(int32_t _table_id, const TableConfig &_table_config);
 
   int Start();
-
+  
+  // needed for threads that accesses table API (actually just Inc) and ShutDown
+  int RegisterThr();
   
   // ShutDown() blocks until QuiltDB completes proper ShutDown protocol with its
   // neighbors (essentially, its neighbors have called ShutDown too). After it 
@@ -47,7 +49,11 @@ public:
   // The application is responsible for determining the termination condition as
   // when ShutDown() is called, the message ring may be broken as soon as all 
   // neighbors call ShutDown().
+  // must be called when that thread is registered
   int ShutDown();
+
+  // Deregister must be called by threads that have registered
+  int DeregisterThr();
 
 private:
 
