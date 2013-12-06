@@ -13,9 +13,9 @@ struct ReceiverConfig{
   int32_t my_id_;
   NodeInfo upstream_;
   int32_t num_expected_propagators_;
-  zmq::context_t zmq_ctx_;
-  std::string update_push_endp_;
-  std::string recv_pull_endp_;
+  zmq::context_t *zmq_ctx_;
+  std::string update_push_endp_; // receive my own updates from internal 
+                                 // propagator pair
   std::string internal_pair_endp_;
 };
 
@@ -25,8 +25,11 @@ class Receiver {
 
   struct ReceiverThrInfo {
     int32_t my_id_;
-    int32_t expected_num_propagators_;
+    int32_t num_expected_propagators_;
     int32_t internal_pair_endp_;
+    zmq::context_t *zmq_ctx;
+    std::string update_push_endp_;
+    std::string internal_pair_endp_;
   };
 
   /*

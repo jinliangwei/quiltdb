@@ -244,7 +244,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
   boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > >
     my_update_store;
 
-  bool have_received_ds_term = false;
+  bool have_received_ds_term = false; // received termination message from 
+                                     // downstream receiver
   bool have_stoped_timer_thr = false;
   bool have_stopped_recv_thr = false; // received ack from recv thread
 
