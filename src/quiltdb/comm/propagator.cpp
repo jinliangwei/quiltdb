@@ -64,22 +64,33 @@ int Propagator::Start(PropagatorConfig &_config, sem_t *_sync_sem){
 
   zmq_ctx_ = _config.zmq_ctx_;
   update_pull_endp_ = _config.update_pull_endp_;
+  
+  sem_t internal_sync_sem;
+  sem_init(&internal_sync_sem, 0, 0);
 
+  thrinfo_.my_id_ = _config.my_id_;
   thrinfo_.propagator_ptr_ = this;
   thrinfo_.sync_sem_ = _sync_sem;
   thrinfo_.nanosec_ = _config.nanosec_;
   thrinfo_.my_info_ = _config.my_info_;
+  thrinfo_.internal_pair_endp_ = config.internal_pair_endp_;
+  thrinfo_.internal_sync_sem_ = &internal_sync_sem;
 
   int ret = pthread_create(&thr_, NULL, PropagatorThrMain, &thrinfo_);
+  
+  sem_destroy(&internal_sync_sem);
   if(ret != 0) return -1;
 
   return 0;
 }
 
 void Propagator::RegisterTable(int32_t _table_id, ValueAddFunc vadd_func,
-			       int32_t _update_size){
-  table_dir_[_table_id] = vadd_func;
-  table_update_size_[_table_id] = _update_size;
+			       int32_t _update_size, bool _loop,
+			       bool _apply_updates){
+  table_dir_[_table_id].vadd_func_ = vadd_func;
+  table_dir_[_table_id].update_size_ = _update_size;
+  table_dir_[_table_id].loop_ = _loop;
+  table_dir_[_table_id].apply_updates_ = _apply_updates;
   return;
 }
 
@@ -220,14 +231,18 @@ void *Propagator::PropagatorThrMain(void *_argu){
   PropagatorThrInfo *thrinfo = reinterpret_cast<PropagatorThrInfo*>(_argu);
   Propagator *propagator_ptr = thrinfo->propagator_ptr_;
   zmq::context_t *zmq_ctx = propagator_ptr->zmq_ctx_;
-  
+  int32_t my_id = thrinfo->my_id_;
+  std::string internal_pair_endp = thrinfo->internal_pair_endp_;
+
   // the update store for a particulr table is created on the first update
   // received for that table.
   boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > > 
     update_store;
   boost::unordered_map<int32_t, boost::unordered_map<int32_t, UpdateRange> >
-    table_peers_upate_range;
+    table_peers_update_range;
   boost::unordered_map<int32_t, UpdateRange> my_update_range;
+  boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > >
+    my_update_store;
 
   bool have_received_ds_term = false;
   bool have_stoped_timer_thr = false;
@@ -247,7 +262,22 @@ void *Propagator::PropagatorThrMain(void *_argu){
   
   // initialized only when tending to send message to internal receiver
   boost::scoped_ptr<zmq::socket_t> internal_recv_push_sock;
-  
+  boost::scoped_ptr<zmq::socket_t> internal_prop_recv_pair_sock;
+
+  // initialize my_update_range
+  {
+    boost::unordered_map<int32_t, int32_t>::iterator table_iter;
+    for(table_iter = propagator_ptr->table_dir_.begin();
+	table_iter != propagator_ptr->table_dir_.end();
+	table_iter++){
+
+      UpdateRange ur;
+      ur.st_ = 0;
+      ur.end_ = 0;
+      my_update_range[table_iter->first] = ur;
+    }
+  }
+
   pid_t tid = syscall(SYS_gettid);
   std::stringstream ss;
   ss << tid;
@@ -263,12 +293,15 @@ void *Propagator::PropagatorThrMain(void *_argu){
   try{
     // inproc sockets
     update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+    update_pull_sock->bind(propagator_ptr->update_pull_endp_.c_str());    
     
     // TCP sockets
     //prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
     //recv_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
 
-    update_pull_sock->bind(propagator_ptr->update_pull_endp_.c_str());
+    internal_prop_recv_pair_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PAIR));
+    internal_prop_recv_pair_sock->bind(internal_pair_endp.c_str());
+    
   }catch(zmq::error_t &e){
     VLOG(0) << "Failed to set up sockets, e.what() = " << e.what();
     propagator_ptr->errcode_ = 1;
@@ -278,6 +311,9 @@ void *Propagator::PropagatorThrMain(void *_argu){
     propagator_ptr->errcode_ = 1;
     sem_post(thrinfo->sync_sem_);
   }
+  
+  sem_post(thrinfo->internal_sync_sem_);
+  //TODO: wait for message from internal receiver for connection
   
   VLOG(3) << "propagator thread initiazlied all sockets!";
 
@@ -358,26 +394,97 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  propagator_ptr->errcode_ = 1;
 	}
 	
+	VLOG(2) << "set up update buffer to send out";
 	boost::unordered_map<int32_t, 
 			     boost::unordered_map<int64_t, uint8_t* > >::iterator
 	  table_iter;
-	for(table_iter = update_store.begin(); table_iter != update_store.end(); 
+	for(table_iter = update_store.begin(); table_iter != update_store.end();
 	    table_iter++){
 	  int32_t table_id = table_iter->first;
-	  int32_t num_peers = table_peers_update_range[table_id].size();
-	  int32_t update_size = (propagator_ptr->table_update_size_)[table_id];
 	  int32_t num_updates = table_iter->second.size();
+	  if(num_updates == 0) continue;
+	  // Note that num_peers is just an upper bound of the number of peers 
+	  // to be added to the buffer, as the table may contain range of 0
+	  int32_t num_peers = table_peers_update_range[table_id].size();
+	  int32_t update_size = (propagator_ptr->table_dir_)[table_id].update_size_;
+	  VLOG(2) << "update_size = " << update_size;
 	  UpdateBuffer *update_buff = 
-	    UpdateBuffer::CreateUpdateBuffer(update_size, num_updates, num_peers);
-	  
-	  boost::unordered_map<int64_t, uint8_t*> >::iterator
+	    UpdateBuffer::CreateUpdateBuffer(update_size, num_updates, 
+					     num_peers + 1);
+	  boost::unordered_map<int64_t, uint8_t*>::const_iterator
 	    update_iter;
 	  for(update_iter = table_iter->second.begin(); 
 	      update_iter != table_iter->second.end();
 	      update_iter++){
-
+	    int ret = update_buff->AppendUpdate(update_iter->first, 
+						update_iter->second);
+	    VLOG(2) << "appended update to buffer, key " << update_iter->first;
+	    CHECK(ret == 0) << "Append to update buffer failed";
+	    delete[] update_iter->second;
+	    table_iter->second.erase(update_iter);
+	  }
+	  boost::unordered_map<int32_t, UpdateRange>::iterator 
+	    update_range_iter;
+	  for(update_range_iter = table_peers_update_range[table_id].begin();
+	      update_range_iter != table_peers_update_range[table_id].end();
+	      update_range_iter++){
+	    int64_t st = update_range_iter->second.st_;
+	    int64_t end = update_range_iter->second.end_;
+	    if(st <= end){
+	      update_buff->UpdateNodeRange(update_range_iter->first, 
+					  st, end);
+	      update_range_iter->second.st_ = end + 1;
+	    }
+	  }
+	  
+	  if(my_update_range[table_id].st_ <= my_update_range[table_id].end_){
+	    update_buff->UpdateNodeRange(my_id, my_update_range[table_id].st_, 
+					 my_update_range[table_id].end_);
 	  }
 
+	  //TODO: this is only for debugging, remove it
+	  if(update_buff->StartIteration() == 0){
+	    int64_t key;
+	    const uint8_t *update = update_buff->NextUpdate(&key);
+	    while(update != NULL){
+	      VLOG(2) << "update, key = " << key
+		      << " update = " 
+		      << *(reinterpret_cast<const int32_t*>(update));
+	      update = update_buff->NextUpdate(&key);
+	    }
+	  }
+	  
+	  if(propagator_ptr->table_dir[table_id].loop_){
+	    if(my_update_store[table_id].size() > 0){
+	      int32_t num_my_updates = my_update_store[table_id].size();
+	      UpdateBuffer *my_update_buff = 
+		UpdateBuffer::CreateUpdateBuffer(update_size, num_my_updates, 1);
+	      boost::unordered_map<int64_t, uint8_t*>::const_iterator
+		my_update_iter;
+	      for(my_update_iter = my_update_store[table_id].begin(); 
+		  my_update_iter != my_update_store[table_id].end();
+		  my_update_iter++){
+		int ret = my_update_buff->AppendUpdate(my_update_iter->first, 
+						       my_update_iter->second);
+		CHECK(ret == 0) << "Append to update buffer failed";
+		delete[] my_update_iter->second;
+		my_update_store[table_id].erase(my_update_iter);	      
+	      }
+	      if(my_update_range[table_id].st_ 
+		 <= my_update_range[table_id].end_){
+		my_update_buff->UpdateNodeRange(my_id, 
+					     my_update_range[table_id].st_, 
+					     my_update_range[table_id].end_);
+	      }else{
+		LOG(FATAL) << "I have updates, but my update range is empty!";
+	      }
+	      // TODO: send to internal receiver and wait for its response
+	      UpdateBuffer::DestroyUpdateBuffer(my_update_buff);
+	    }
+	  }
+	  
+	  my_update_range[table_id].st_ = my_update_range[table_id].end_ + 1;
+	  
 	  //TODO: send update buffer to downstream receiver!
 	  UpdateBuffer::DestroyUpdateBuffer(update_buff);
 	  
@@ -444,13 +551,13 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    // send it out
 	  }else{
 	    uint8_t *update_delta = reinterpret_cast<uint8_t*>(data.get());
-	    boost::unordered_map<int32_t, ValueAddFunc>::const_iterator itr 
+	    boost::unordered_map<int32_t, TableInfo>::const_iterator itr 
 	      = propagator_ptr->table_dir_.find(tid);
 	    if(itr == propagator_ptr->table_dir_.end()){
 	      propagator_ptr->errcode_ = 1;
-	      VLOG(0) << "Table " << tid << " does not exist";
+	      LOG(FATAL) << "Table " << tid << " does not exist";
 	    }
-	    ValueAddFunc table_vadd = itr->second;
+	    ValueAddFunc table_vadd = itr->second.vadd_func_;
 	    boost::unordered_map<int64_t, uint8_t*>::iterator update_itr 
 	      = update_store[tid].find(key);
 	    
@@ -459,6 +566,16 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      memset(update_store[tid][key], 0, len);
 	    }
 	    table_vadd(update_store[tid][key], update_delta, len);
+	    
+	    if(propagator_ptr->table_dir_[tid].loop_){
+	      boost::unordered_map<int64_t, uint8_t*>::iterator my_update_itr
+		= my_update_store[tid].find(key);
+	      if(my_update_itr == my_update_store[tid].end()){
+		my_update_store[tid][key] = new uint8_t[len];
+		memset(my_update_store[tid][key], 0, len);
+	      }
+	      table_vadd(my_update_store[tid][key], update_delta, len);
+	    }
 	  }
 	}
 	break;

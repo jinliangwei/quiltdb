@@ -19,6 +19,10 @@ struct TableConfig{
 
   ValueAddFunc vadd_func_;
   ValueSubFunc vsub_func_;
+
+  bool loop_;
+  bool apply_updates_;
+  bool user_cbk_;
 };
 
 class InternalTable {
@@ -50,6 +54,10 @@ public:
     propagator = _prop;
   }
 
+  int32_t get_vsize(){
+    return vsize_;
+  }
+
 private:
   int32_t table_id_;
   int32_t vsize_;
@@ -60,6 +68,11 @@ private:
   tbb::concurrent_hash_map<int64_t, uint8_t*> storage_;
   
   Propagator *propagator;
+
+  // OpLog related configs
+  bool loop_;
+  bool apply_updates_;
+  bool user_cbk_; // call user defined callback function
 };
 
 template<typename ValueType>

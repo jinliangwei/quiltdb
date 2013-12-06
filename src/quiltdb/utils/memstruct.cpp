@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string.h>
 #include <new> // for operator new
-
+#include <glog/logging.h>
 namespace quiltdb {
 
 int32_t UpdateBuffer::GetBuffSize(int32_t _update_size, 
@@ -24,7 +24,8 @@ int32_t UpdateBuffer::GetBuffSize(int32_t _update_size,
 uint8_t *UpdateBuffer::AllocateBufferMemory(int32_t _buff_size){
 
   uint8_t *mem = new uint8_t[_buff_size];
-
+  
+  return mem;
 }
 
 UpdateBuffer *UpdateBuffer::CreateUpdateBuffer(int32_t _update_size,
@@ -82,17 +83,19 @@ UpdateBuffer::UpdateBuffer(int32_t _buff_size,
     node_range_ptr += (sizeof(int32_t) + sizeof(int64_t) + sizeof(int64_t));
   }
 
-  update_st_offset_ = _node_range_capacity*(sizeof(int32_t) 
-					    + sizeof(int64_t) 
-					    + sizeof(int64_t));
+  update_st_offset_ = sizeof(UpdateBuffer) 
+    + _node_range_capacity*(sizeof(int32_t) 
+			    + sizeof(int64_t) 
+			    + sizeof(int64_t));
   
   update_end_offset_ = update_st_offset_;
   update_iter_offset_ = update_st_offset_;
+
 }
 
 int UpdateBuffer::AppendUpdate(int64_t _key, const uint8_t *_update){
   if(num_updates_occupied_ == update_capacity_) return -1;
-  
+
   uint8_t *update_end_ptr = reinterpret_cast<uint8_t*>(this) 
     + update_end_offset_;
   
@@ -103,7 +106,7 @@ int UpdateBuffer::AppendUpdate(int64_t _key, const uint8_t *_update){
   
   update_end_offset_ += (sizeof(int64_t) + update_size_);
   ++num_updates_occupied_;
-  
+
   return 0;
 }
 
@@ -124,6 +127,8 @@ const uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   int64_t *key_ptr = reinterpret_cast<int64_t*>(update_iter_ptr);
   
   *key = *key_ptr;
+
+  update_iter_offset_ += (sizeof(int64_t) + update_size_);
   
   return (update_iter_ptr + sizeof(int64_t));
 }

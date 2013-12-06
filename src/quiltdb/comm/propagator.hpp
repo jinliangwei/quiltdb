@@ -17,20 +17,26 @@
 namespace quiltdb {
 
 struct PropagatorConfig {
+  int32_t my_id_;
   int32_t nanosec_;
   NodeInfo my_info_;
   zmq::context_t *zmq_ctx_;
   std::string update_pull_endp_;
   std::string recv_pull_endp_;
+  std::string internal_pair_endp_; // pair socket connecting propagator and 
+                                   // internal receiver
 };
 
 class Propagator : boost::noncopyable {
 
   struct PropagatorThrInfo{
+    int32_t my_id_;
     Propagator *propagator_ptr_;
     sem_t *sync_sem_;
     int32_t nanosec_;
     NodeInfo my_info_;
+    std::string internal_pair_endp_;
+    sem_t *internal_sync_sem_;
   };
 
   enum PropagatorState{INIT, RUN, TERM_PREP, TERM};
@@ -114,7 +120,8 @@ public:
   ~Propagator();
   
   void RegisterTable(int32_t _table_id, ValueAddFunc vadd_func,
-		     int32_t _update_size);
+		     int32_t _update_size, bool loop_ = false,
+		     bool _apply_updates = true);
 
   // this function can not block as the main thread needs to start
   // other propagator and receiver too
@@ -135,9 +142,23 @@ public:
   int GetErrCode();
   
 private:
+  // when a peer's updates are propagated out, set st_ to end_ + 1
+  // so if st_ > end_, there's no update from this peer 
   struct UpdateRange{
     int64_t st_;
     int64_t end_;
+    
+    bool Contains(const UpdateRange &_ur){
+      if(st_ <= _ur.st_ && end_ >= _ur.end) return true;
+      else return false;
+    }
+  };
+
+  struct TableInfo{
+    int32_t upate_size_;
+    ValueAddFunc vadd_func_;
+    bool loop_;
+    bool apply_updates_;
   };
 
   // These are updates that has been sent out, which should be subtracted from 
@@ -147,7 +168,7 @@ private:
 
   static int32_t TimerHandler(void * _propagator, int32_t _rem);
   static void *PropagatorThrMain(void *_argu);
-  
+
   PropagatorThrInfo thrinfo_;
   pthread_t thr_;
   bool have_signaled_term_;
@@ -170,8 +191,7 @@ private:
   
   // access by application threads before propagator thread starts running
   // for RegisterTable()
-  boost::unordered_map<int32_t, ValueAddFunc> table_dir_;
-  boost::unordered_map<int32_t, int32_t> table_update_size_;
+  boost::unordered_map<int32_t, TableInfo> table_dir_;
   
   boost::thread_specific_ptr<zmq::socket_t> timer_push_sock_;
   // PULL sock for timer thread to receive cmd

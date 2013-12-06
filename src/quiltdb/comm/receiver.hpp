@@ -10,15 +10,24 @@
 namespace quiltdb {
 
 struct ReceiverConfig{
+  int32_t my_id_;
   NodeInfo upstream_;
+  int32_t num_expected_propagators_;
   zmq::context_t zmq_ctx_;
   std::string update_push_endp_;
   std::string recv_pull_endp_;
+  std::string internal_pair_endp_;
 };
 
 class Receiver {
 
   enum ReceiverState{INIT, RUN, TERM_SELF, TERM};
+
+  struct ReceiverThrInfo {
+    int32_t my_id_;
+    int32_t expected_num_propagators_;
+    int32_t internal_pair_endp_;
+  };
 
   /*
    * Receiver state transition and termination logic
@@ -52,6 +61,24 @@ class Receiver {
    * TERM: GetErrCode()
    */
 
+  /*
+   * Receiver functionality:
+   * 1. Get connections from expected number of propagators;
+   * 2. When the paired propagator sends out a update buffer, it must notify the
+   * paired receiver of the internal updates that's included. The internal 
+   * update buffer will be saved to remove my own updates.
+   * 3. When receives an update buffer, check if the corresponding table is 
+   * loop. If it is, remove my own updates and destroy the corresponding update 
+   * buffer.
+   * 4. The received upates triggers user callback if corresponding table's 
+   * callback is true.
+   * 5. When receiving an update buffer, need to make sure updates from one peer
+   * are ordered -- this is to ensure a contiguous range of received updates 
+   * from one client. This relies on the ordering of messages of 0MQ (both TCP 
+   * conection and inproc pipe).
+   *
+   */
+
 public:
   Receiver();
   int Start(ReceiverConfig &_config, sem_t *sync_sem);
@@ -61,8 +88,8 @@ public:
   int WaitTerm();
 
 private:
-  int PropagateUpdates(int32_t _table_id, UpdateBuffer *_updates);
-
+  static int PropagateUpdates(int32_t _table_id, UpdateBuffer *_updates);
+  static void *ReceiverThrMain(void *argu);
 };
 
 }

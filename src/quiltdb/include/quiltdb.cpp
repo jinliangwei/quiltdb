@@ -39,7 +39,7 @@ Table QuiltDB::CreateHTable(int32_t _table_id, const TableConfig &_table_config)
   int ret = CreateTable(_table_id, _table_config, &table);
   
   hpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func(),
-			     table.internal_table_->vsize_);
+			     table.internal_table_->get_vsize());
   table.internal_table_->set_propagator(&hpropagator_);
   VLOG(0) << "successfully created htable " << _table_id;
   // TODO: register table with receiver
@@ -53,7 +53,7 @@ Table QuiltDB::CreateVTable(int32_t _table_id, const TableConfig &_table_config)
   int ret = CreateTable(_table_id, _table_config, &table);
   
   vpropagator_.RegisterTable(_table_id, table.internal_table_->get_vadd_func(),
-			     table.internal_table_->vsize_);
+			     table.internal_table_->get_vsize());
   table.internal_table_->set_propagator(&vpropagator_);
   // TODO: register table with receiver
   return table;
@@ -71,6 +71,7 @@ int QuiltDB::Start(){
   propagator_config.zmq_ctx_ = zmq_ctx_;
   propagator_config.update_pull_endp_ = "inproc://hprop_update_pull_endp";
   propagator_config.recv_pull_endp_ = "inproc://hrecv_pull_endp";
+  propagator_config.internal_pair_endp_ = "inproc://hproc_recv_pair_endp";
 
   hpropagator_.Start(propagator_config, &sync_sem);
   VLOG(0) << "successfully called Start on hpropagator";
