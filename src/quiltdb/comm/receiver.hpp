@@ -16,7 +16,10 @@ struct ReceiverConfig{
   zmq::context_t *zmq_ctx_;
   std::string update_push_endp_; // receive my own updates from internal 
                                  // propagator pair
-  std::string internal_pair_endp_;
+  std::string internal_recv_pull_endp_;
+  std::string internal_pair_recv_push_endp_;
+
+  sem_t *sync_sem_;
 };
 
 class Receiver {
@@ -29,8 +32,13 @@ class Receiver {
     int32_t internal_pair_endp_;
     zmq::context_t *zmq_ctx;
     std::string update_push_endp_;
-    std::string internal_pair_endp_;
+    std::string internal_recv_pull_endp_;
+    std::string internal_pair_recv_push_endp_;
+
+    sem_t *sync_sem_;
   };
+
+  enum ReceiverState{INIT, RUN, TERM_PREP, TERM};
 
   /*
    * Receiver state transition and termination logic
@@ -91,8 +99,10 @@ public:
   int WaitTerm();
 
 private:
-  static int PropagateUpdates(int32_t _table_id, UpdateBuffer *_updates);
   static void *ReceiverThrMain(void *argu);
+  
+  volatile 
+
 };
 
 }

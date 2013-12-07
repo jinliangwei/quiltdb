@@ -253,17 +253,31 @@ void *Propagator::PropagatorThrMain(void *_argu){
   boost::scoped_ptr<zmq::socket_t> prop_push_sock;
   // PULL sock to receive messages (basically, termination message) from
   // receiver
-  boost::scoped_ptr<zmq::socket_t> recv_pull_sock;
+  boost::scoped_ptr<zmq::socket_t> term_pull_sock;
 
   // inproc sockets
   boost::scoped_ptr<zmq::socket_t> update_pull_sock;
   boost::scoped_ptr<zmq::socket_t> timer_pull_sock;  
   // PUSH sock to send cmd to timer thread
   boost::scoped_ptr<zmq::socket_t> timer_send_sock;
-  
-  // initialized only when tending to send message to internal receiver
-  boost::scoped_ptr<zmq::socket_t> internal_recv_push_sock;
-  boost::scoped_ptr<zmq::socket_t> internal_prop_recv_pair_sock;
+
+  boost::scoped_ptr<zmq::socket_t> internal_prop_recv_pair_push_sock;
+  boost::scoped_ptr<zmq::socket_t> internal_prop_recv_pair_pull_sock;
+
+  /*
+   * Propagator-receiver internal connection
+   * 
+   * Receiver -> Propagator
+   * sockets: interna_upate_push_sock -> update_pull_sock
+   * data: received external updates, termination ACK
+   * 
+   * internal_prop_recv_pair_push_sock --> internal_prop_recv_pair_pull_sock
+   * internal_prop_recv_pair_pull_sock <-- internal_prop_recv_pair_push_sock
+   * Propagator -> Receiver: my own updates, terminatin message
+   * Receiver -> Propagator: ACK to my own updates,
+   *
+   */
+
 
   // initialize my_update_range
   {
@@ -291,17 +305,22 @@ void *Propagator::PropagatorThrMain(void *_argu){
 
   VLOG(0) << "propagator thread start initializing sockets";
 
-  try{
+  try{    
+    // TCP sockets
+    //prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+    //term_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+
     // inproc sockets
     update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
     update_pull_sock->bind(propagator_ptr->update_pull_endp_.c_str());    
     
-    // TCP sockets
-    //prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
-    //recv_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+    internal_prop_recv_pair_pull_sock.reset(new zmq::socket_t(*zmq_ctx, 
+							      ZMQ_PULL));
+    internal_prop_recv_pair_pull_sock->bind(internal_pair_r2p_endp.c_str());
 
-    internal_prop_recv_pair_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PAIR));
-    internal_prop_recv_pair_sock->bind(internal_pair_endp.c_str());
+    internal_prop_recv_pair_push_sock.reset(new zmq::socket_t(*zmq_ctx, 
+							      ZMQ_PUSH));
+    internal_prop_recv_pair_push_sock->bind(internal_pair_p2r_endp.c_str());
     
   }catch(zmq::error_t &e){
     VLOG(0) << "Failed to set up sockets, e.what() = " << e.what();
@@ -316,10 +335,19 @@ void *Propagator::PropagatorThrMain(void *_argu){
   sem_post(thrinfo->internal_sync_sem_);
   //TODO: wait for message from internal receiver for connection
   
-  VLOG(3) << "propagator thread initiazlied all sockets!";
+  boost::shared_array<uint8_t> data;
+  int ret = RecvMsg(*internal_prop_recv_pair_sock, data);
+  CHECK_EQ(ret, sizeof(PropagatorMsgType));
+  PropagatorMsgType *msg = reinterpret_cast<PropagatorMsgType*>(data.get());
+  CHECK_EQ(*msg, EPRInit) << "received unrecognized message " << *msg;
 
   // TODO: wait for connection messages from receiver
-  // perform handshake with receiver
+
+  // Send message to prop_push_sock
+  // Wait 1 message from term_pull_sock
+
+  VLOG(3) << "propagator thread initiazlied all sockets!";
+
   propagator_ptr->state_ = RUN;
   sem_post(thrinfo->sync_sem_);
   
@@ -341,11 +369,11 @@ void *Propagator::PropagatorThrMain(void *_argu){
   }
   
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
-  pollitems[0].socket = *(update_pull_sock.get());
+  pollitems[0].socket = *update_pull_sock;
   pollitems[0].events = ZMQ_POLLIN;
 
   if(thrinfo->nanosec_ > 0){
-    pollitems[1].socket = *(timer_pull_sock.get());
+    pollitems[1].socket = *timer_pull_sock;
     pollitems[1].events = ZMQ_POLLIN;
   }
 
@@ -499,6 +527,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  // TODO: check if have stopped internal receiver and
 	  // acknolwedged downstream receiver
 	  propagator_ptr->state_ = TERM;
+	  delete[] pollitems;
 	  return 0;
 	}
 	continue;
@@ -512,7 +541,6 @@ void *Propagator::PropagatorThrMain(void *_argu){
       PropagatorMsgType msgtype;
       len = RecvMsg(*update_pull_sock, data);
       if(len <= 0){
-	propagator_ptr->errcode_ = 1;
 	LOG(FATAL) << "propagator thread read message type failed, "
 		   << "error \nPROCESS EXIT!";
       }
@@ -521,10 +549,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
       case EPUpdateLog:
 	{
 
-	  if(len != sizeof(PUpdateLogMsg)){
-	    propagator_ptr->errcode_ = 1;
-	    VLOG(0) << "Malformed UpdateLog message";
-	  }
+	  CHECK_EQ(len, sizeof(PUpdateLogMsg)) << "Malformed UpdateLog message";
 	  
 	  PUpdateLogMsg *updatelog 
 	    = reinterpret_cast<PUpdateLogMsg*>(data.get());
@@ -533,10 +558,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  int64_t key = updatelog->key_;
 	  assert(updatelog->update_type_ == EInc);
 	  len = RecvMsg(*update_pull_sock, data);
-	  if(len <= 0){
-	    propagator_ptr->errcode_ = 1;
-	    VLOG(0) << "Malformed UpdateLog message";
-	  }
+
+	  CHECK(len > 0) << "Malformed UpdateLog message";
 	  
 	  VLOG(1) << "received update log"
 		  << " table " << tid
@@ -554,10 +577,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    uint8_t *update_delta = reinterpret_cast<uint8_t*>(data.get());
 	    boost::unordered_map<int32_t, TableInfo>::const_iterator itr 
 	      = propagator_ptr->table_dir_.find(tid);
-	    if(itr == propagator_ptr->table_dir_.end()){
-	      propagator_ptr->errcode_ = 1;
-	      LOG(FATAL) << "Table " << tid << " does not exist";
-	    }
+
+	    CHECK(itr == propagator_ptr->table_dir_.end() 
+		  << "Table " << tid << " does not exist";
+
 	    ValueAddFunc table_vadd = itr->second.vadd_func_;
 	    boost::unordered_map<int64_t, uint8_t*>::iterator update_itr 
 	      = update_store[tid].find(key);

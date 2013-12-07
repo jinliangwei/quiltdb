@@ -17,7 +17,7 @@ namespace quiltdb {
 
 // messages to be received by propagator via inter-thread sock
 enum PropagatorMsgType{EPUpdateLog, EPUpdateBuffer, EPInternalTerminate, 
-		       EPRecvInternalTerminateAck, EPRInit};
+		       EPRecvInternalTerminateAck, EPRInit, MyUpdatesACK};
 
 struct PUpdateLogMsg {
   PropagatorMsgType msgtype_;
@@ -35,7 +35,16 @@ struct PUpdateBufferMsg {
 enum PropRecvMsgType{EPRUpdateBuffer, EPRTerminate, EPRTerminateAck};
 
 // messages to be received by receiver via inter-thread sock
-enum ReceiverMsgType{ERInternalTerminate, EPRInternalTerminate, EPRInitAck};
+// ERInternalTerminate: application signals terminate to receiver
+// EPRInternalTerminate: paired propagator signals terminate
+// EMyUpdates: my owned updates
+enum ReceiverMsgType{ERInternalTerminate, EPRInternalTerminate, EMyUpdates};
+
+struct MyUpdatesMsg{
+  ReceiverMsgType msgtype_;
+  int32_t table_id_;
+  UpdateBuffer *update_buffer_ptr_;
+};
 
 enum TimerMsgType{ETimerTrigger, ETimerCmd};
 

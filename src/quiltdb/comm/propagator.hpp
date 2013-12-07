@@ -22,9 +22,10 @@ struct PropagatorConfig {
   NodeInfo my_info_;
   zmq::context_t *zmq_ctx_;
   std::string update_pull_endp_;
-  std::string recv_pull_endp_;
-  std::string internal_pair_endp_; // pair socket connecting propagator and 
-                                   // internal receiver
+  std::string internal_pair_p2r_endp_; // pair socket connecting propagator and 
+                                       // internal receiver, p -> r
+  std::string internal_pair_r2p_endp_; // pair socket connecting propagator and 
+                                       // internal receiver, r -> p
 };
 
 class Propagator : boost::noncopyable {
@@ -35,7 +36,8 @@ class Propagator : boost::noncopyable {
     sem_t *sync_sem_;
     int32_t nanosec_;
     NodeInfo my_info_;
-    std::string internal_pair_endp_;
+    std::string internal_pair_p2r_endp_;
+    std::string internal_pair_r2p_endp_;
     sem_t *internal_sync_sem_;
   };
 
