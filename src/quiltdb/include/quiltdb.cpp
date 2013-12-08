@@ -69,7 +69,6 @@ Table QuiltDB::CreateHTable(int32_t _table_id, const TableConfig &_table_config)
 
   hreceiver_.RegisterTable(table.internal_table_);
   VLOG(0) << "successfully created htable " << _table_id;
-  // TODO: register table with receiver
   return table;
 }
 
@@ -83,7 +82,7 @@ Table QuiltDB::CreateVTable(int32_t _table_id, const TableConfig &_table_config)
 			     table.internal_table_->get_vsize(),
 			     _table_config.loop_, _table_config.apply_updates_);
   table.internal_table_->set_propagator(&vpropagator_);
-  // TODO: register table with receiver
+  vreceiver_.RegisterTable(table.internal_table_);
   return table;
 }
 
@@ -95,7 +94,7 @@ int QuiltDB::Start(){
 
   started_ = true;
   PropagatorConfig propagator_config;
-  propagator_config.my_id_ = config_.my_id_;
+  propagator_config.my_id_ = config_.my_hid_;
   propagator_config.nanosec_ = config_.hbatch_nanosec_;
   propagator_config.zmq_ctx_ = zmq_ctx_;
   propagator_config.update_pull_endp_ = KHPROP_UPDATE_PULL_ENDP;
@@ -106,7 +105,7 @@ int QuiltDB::Start(){
   VLOG(0) << "successfully called Start on hpropagator";
 
   ReceiverConfig receiver_config;
-  receiver_config.my_id_ = config_.my_id_;
+  receiver_config.my_id_ = config_.my_hid_;
   receiver_config.num_expected_propagators_ = config_.hexpected_prop_;
   receiver_config.zmq_ctx_ = zmq_ctx_;
   receiver_config.update_push_endp_ = KHPROP_UPDATE_PULL_ENDP;
@@ -116,12 +115,22 @@ int QuiltDB::Start(){
   
   hreceiver_.Start(receiver_config, &sync_sem);
 
-  //propagator_config.update_pull_endp_ = "inproc://vprop_update_pull_endp";
-  //propagator_config.recv_pull_endp_ = "inproc://vrecv_pull_endp";
+  propagator_config.my_id_ = config_.my_vid_;
+  propagator_config.update_pull_endp_ = KVPROP_UPDATE_PULL_ENDP;
+  propagator_config.internal_pair_p2r_endp_ = KVINTERNAL_PAIR_P2R_ENDP;
+  propagator_config.internal_pair_r2p_endp_ = KVINTERNAL_PAIR_R2P_ENDP;
+  vpropagator_.Start(propagator_config, &sync_sem);
+  VLOG(0) << "successfully called Start on vpropagator";
 
-  //hpropagator_.Start(propagator_config, &sync_sem);
-  //VLOG(0) << "successfully called Start on vpropagator";
+  receiver_config.my_id_ = config_.my_vid_;
+  receiver_config.update_push_endp_ = KVPROP_UPDATE_PULL_ENDP;
+  receiver_config.internal_recv_pull_endp_ = KVINTERNAL_RECV_PULL_ENDP;
+  receiver_config.internal_pair_recv_push_endp_ 
+    = KVINTERNAL_PAIR_RECV_PUSH_ENDP;
+  vreceiver_.Start(receiver_config, &sync_sem);
   
+  sem_wait(&sync_sem);
+  sem_wait(&sync_sem);
   sem_wait(&sync_sem);
   sem_wait(&sync_sem);
   
@@ -133,13 +142,13 @@ int QuiltDB::Start(){
 
 int QuiltDB::RegisterThr(){
   if(hpropagator_.RegisterThr() < 0) return -1;
-  //if(vpropagator_.RegisterThr() < 0) return -1;
+  if(vpropagator_.RegisterThr() < 0) return -1;
   return 0;
 }
 
 int QuiltDB::DeregisterThr(){
   if(hpropagator_.DeregisterThr() < 0) return -1;
-  //if(vpropagator_.DeregisterThr() < 0) return -1;
+  if(vpropagator_.DeregisterThr() < 0) return -1;
   return 0;
 }
 
@@ -149,12 +158,19 @@ int QuiltDB::ShutDown(){
   CHECK_EQ(ret, 0) << "hpropagator_.SignalTerm() failed";
   ret = hreceiver_.SignalTerm();
   CHECK_EQ(ret, 0) << "hreceiver_.SignalTerm() failed";
-
-  //vpropagator_.SignalTerm();
+  ret = vpropagator_.SignalTerm();
+  CHECK_EQ(ret, 0) << "vpropagator_.SignalTerm() failed";
+  ret = vreceiver_.SignalTerm();
+  CHECK_EQ(ret, 0) << "vreceiver_.SignalTerm() failed";
+  
   ret = hpropagator_.WaitTerm();
   CHECK_EQ(ret, 0) << "hpropagator_.WaitTerm() failed";
   ret = hreceiver_.WaitTerm();
   CHECK_EQ(ret, 0) << "hreceiver_.WaitTerm() failed";
+  ret = vpropagator_.WaitTerm();
+  CHECK_EQ(ret, 0) << "vpropagator_.WaitTerm() failed";
+  ret = vreceiver_.WaitTerm();
+  CHECK_EQ(ret, 0) << "vreceiver_.WaitTerm() failed";
 
   //vpropagator_.WaitTerm();
   return 0;

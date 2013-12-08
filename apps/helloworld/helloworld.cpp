@@ -2,9 +2,14 @@
 #include <quiltdb/include/quiltdb.hpp>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
 #include <sys/time.h>
+
+DEFINE_string(config_file, "", "configuration file");
+DEFINE_int32(myhid, 0, "my h id");
+DEFINE_int32(myvid, 1, "my v id");
 
 int IntAdd(uint8_t *_v, uint8_t *_delta, int32_t _vsize){
   if(_vsize != sizeof(int)) return -1;
@@ -27,12 +32,34 @@ int IntSub(uint8_t *_v, uint8_t *_delta, int32_t _vsize){
 }
 
 int main(int argc, char *argv[]){
+  google::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
 
+  quiltdb::ConfigParser config_parser;
+  config_parser.LoadConfigFile(FLAGS_config_file);
+
+  // TODO: conifg vertical direction
+  int32_t myhid = FLAGS_myhid;
+
+  quiltdb::NodeConfig my_hconfig = config_parser.GetNodeInfo(myhid);
+  CHECK_EQ(my_hconfig.node_info_.node_id_, myhid) 
+    << "Failed to find id for myself id = " << myhid;
+
+  int32_t h_downstream_id = my_hconfig.downstream_recv_;
+  quiltdb::NodeConfig h_downstream_config 
+    = config_parser.GetNodeInfo(h_downstream_id);
+  
+  CHECK_EQ(h_downstream_config.node_info_.node_id_, h_downstream_id) 
+    << "Failed to find id for h downstream config id = " << h_downstream_id;
+
+  //NodeConfig my_vconfig = config_parser.GetNodeInfo(myvid);  
+
   quiltdb::DBConfig dbconfig;
-  dbconfig.my_id_ = 0;
-  dbconfig.hexpected_prop_ = 0;
-  dbconfig.vexpected_prop_ = 0;
+  dbconfig.my_hid_ = myhid;
+  dbconfig.my_hrecv_info_ = my_hconfig.node_info_;
+  dbconfig.hnode_prop_downstream_ = h_downstream_config.node_info_;
+  dbconfig.hexpected_prop_ = my_hconfig.num_expected_props_;
+
   dbconfig.hbatch_nanosec_ = 500000;
   dbconfig.vbatch_nanosec_ = 500000; // 500 micro second
 
@@ -48,7 +75,7 @@ int main(int argc, char *argv[]){
 
   quiltdb::Table htable = db.CreateHTable(0, tconfig);
   //quitdb::Table vtable = db.CreateVTable(1, tconfig);
-  
+
   db.Start();
   int ret = db.RegisterThr();
   assert(ret == 0);

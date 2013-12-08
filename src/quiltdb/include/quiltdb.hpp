@@ -3,6 +3,7 @@
 
 #include <boost/unordered_map.hpp>
 #include "table.hpp"
+#include <quiltdb/utils/config_parser.hpp>
 
 #include <quiltdb/comm/propagator.hpp>
 #include <quiltdb/comm/receiver.hpp>
@@ -11,15 +12,12 @@
 namespace quiltdb {
 
 struct DBConfig{
-  int32_t my_id_;
-
-  NodeInfo hnode_recv_pull_interface_;
-  NodeInfo hnode_recv_push_interface_;
+  int32_t my_hid_;
+  NodeInfo my_hrecv_info_;
   NodeInfo hnode_prop_downstream_;
   int32_t hexpected_prop_;
-
-  NodeInfo vnode_recv_pull_interface_;
-  NodeInfo vnode_recv_push_interface_;
+  int32_t my_vid_;
+  NodeInfo my_vrecv_info_;
   NodeInfo vnode_prop_downstream_;
   int32_t vexpected_prop_;
 

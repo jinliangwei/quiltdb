@@ -1,0 +1,35 @@
+NodeConfig:
+  - id: 0
+    recv-pull-ip: 127.0.0.1
+    recv-pull-port: 9999
+    recv-push-ip: 127.0.0.1
+    recv-push-port: 10000
+    num-props: 1
+    downstream-id: 2
+
+  - id: 1
+    recv-pull-ip: 127.0.0.1
+    recv-pull-port: 10001
+    recv-push-ip: 127.0.0.1
+    recv-push-port: 10002
+    num-props: 1
+    downstream-id: 3
+
+  - id: 2
+    recv-pull-ip: 127.0.0.1
+    recv-pull-port: 10003
+    recv-push-ip: 127.0.0.1
+    recv-push-port: 10004
+    num-props: 1
+    downstream-id: 0
+
+  - id: 3
+    recv-pull-ip: 127.0.0.1
+    recv-pull-port: 10005
+    recv-push-ip: 127.0.0.1
+    recv-push-port: 10006
+    num-props: 1
+    downstream-id: 1
+
+QuiltConfig:
+  - batch-nanosec: 500000

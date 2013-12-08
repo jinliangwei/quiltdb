@@ -13,6 +13,7 @@ QUILTDB_SRC_CPP = $(QUILTDB_SRC)/include/quiltdb.cpp \
 	$(QUILTDB_SRC)/utils/timer_thr.cpp \
 	$(QUILTDB_SRC)/comm/receiver.cpp \
 	$(QUILTDB_SRC)/comm/comm_util.cpp \
-	$(QUILTDB_SRC)/utils/memstruct.cpp
+	$(QUILTDB_SRC)/utils/memstruct.cpp \
+	$(QUILTDB_SRC)/utils/config_parser.cpp
 
 include $(APPS_DIR)/helloworld/helloworld.mk

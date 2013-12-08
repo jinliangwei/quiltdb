@@ -32,8 +32,7 @@ int Propagator::Start(PropagatorConfig &_config, sem_t *_sync_sem){
   thrinfo_.propagator_ptr_ = this;
   thrinfo_.sync_sem_ = _sync_sem;
   thrinfo_.nanosec_ = _config.nanosec_;
-  thrinfo_.downstream_pull_ = _config.downstream_pull_;
-  thrinfo_.downstream_push_ = _config.downstream_push_;
+  thrinfo_.downstream_recv_ = _config.downstream_recv_;
   thrinfo_.internal_pair_p2r_endp_ = _config.internal_pair_p2r_endp_;
   thrinfo_.internal_pair_r2p_endp_ = _config.internal_pair_r2p_endp_;
   thrinfo_.internal_sync_sem_ = &internal_sync_sem;
@@ -636,6 +635,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  int ret = SendMsg(*internal_prop_recv_pair_push_sock, 
 			    (uint8_t*) &term_msg, sizeof(term_msg), 0);
 	  CHECK_EQ(ret, sizeof(term_msg)) << "Send term msg failed";
+	  
 	  // clear remaing updates
 	  boost::unordered_map<int32_t, 
 	    boost::unordered_map<int64_t, uint8_t*> >::iterator

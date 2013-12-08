@@ -23,8 +23,7 @@ int Receiver::Start(ReceiverConfig &_config, sem_t *_sync_sem){
   internal_recv_pull_endp_ = _config.internal_recv_pull_endp_;
 
   thrinfo_.my_id_ = _config.my_id_;
-  thrinfo_.my_push_ = _config.my_push_;
-  thrinfo_.my_pull_ = _config.my_pull_;
+  thrinfo_.my_info_ = _config.my_info_;
   thrinfo_.num_expected_propagators_ = _config.num_expected_propagators_;
   thrinfo_.zmq_ctx_ = _config.zmq_ctx_;
   thrinfo_.update_push_endp_ = _config.update_push_endp_;

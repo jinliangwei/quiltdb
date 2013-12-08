@@ -14,8 +14,7 @@ namespace quiltdb {
 
 struct ReceiverConfig{
   int32_t my_id_;
-  NodeInfo my_push_;
-  NodeInfo my_pull_;
+  NodeInfo my_info_;
   int32_t num_expected_propagators_;
 
   zmq::context_t *zmq_ctx_;
@@ -32,8 +31,7 @@ class Receiver {
 
   struct ReceiverThrInfo {
     int32_t my_id_;
-    NodeInfo my_push_;
-    NodeInfo my_pull_;
+    NodeInfo my_info_;
     int32_t num_expected_propagators_;
 
     zmq::context_t *zmq_ctx_;

@@ -9,11 +9,11 @@ typedef int (*ValueAddFunc)(uint8_t *, uint8_t *, int32_t);
 typedef int (*ValueSubFunc)(uint8_t *, uint8_t *, int32_t);
 
 struct NodeInfo{
-  
   int32_t node_id_;
-  std::string node_ip_;
-  std::string port_;
-
+  std::string recv_pull_ip_;
+  std::string recv_pull_port_;
+  std::string recv_push_ip_;
+  std::string recv_push_port_;
 };
 
 enum UpdateType{EInc};

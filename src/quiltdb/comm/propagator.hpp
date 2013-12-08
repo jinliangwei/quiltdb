@@ -19,8 +19,7 @@ namespace quiltdb {
 struct PropagatorConfig {
   int32_t my_id_;
   int32_t nanosec_;
-  NodeInfo downstream_pull_;
-  NodeInfo downstream_push_;
+  NodeInfo downstream_recv_;
   zmq::context_t *zmq_ctx_;
   std::string update_pull_endp_;
   std::string internal_pair_p2r_endp_; // pair socket connecting propagator and 
@@ -36,8 +35,7 @@ class Propagator : boost::noncopyable {
     Propagator *propagator_ptr_;
     sem_t *sync_sem_;
     int32_t nanosec_;
-    NodeInfo downstream_pull_;
-    NodeInfo downstream_push_;
+    NodeInfo downstream_recv_;
     std::string internal_pair_p2r_endp_;
     std::string internal_pair_r2p_endp_;
     sem_t *internal_sync_sem_;
