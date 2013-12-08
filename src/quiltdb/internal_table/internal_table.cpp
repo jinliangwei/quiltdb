@@ -6,7 +6,10 @@ InternalTable::InternalTable(int32_t _table_id, const TableConfig &_table_config
   table_id_(_table_id),
   vsize_(_table_config.vsize_),
   vadd_func_(_table_config.vadd_func_),
-  vsub_func_(_table_config.vsub_func_){}
+  vsub_func_(_table_config.vsub_func_),
+  loop_(_table_config.loop_),
+  apply_updates_(_table_config.apply_updates_),
+  user_cbk_(_table_config.user_cbk_){}
 
 // This method is not concurrent.
 InternalTable::~InternalTable(){

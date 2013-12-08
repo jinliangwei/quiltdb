@@ -636,6 +636,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  int ret = SendMsg(*internal_prop_recv_pair_push_sock, 
 			    (uint8_t*) &term_msg, sizeof(term_msg), 0);
 	  CHECK_EQ(ret, sizeof(term_msg)) << "Send term msg failed";
+	  VLOG(0) 
 	  // clear remaing updates
 	  boost::unordered_map<int32_t, 
 	    boost::unordered_map<int64_t, uint8_t*> >::iterator

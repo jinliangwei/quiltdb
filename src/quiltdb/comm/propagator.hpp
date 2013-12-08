@@ -19,7 +19,8 @@ namespace quiltdb {
 struct PropagatorConfig {
   int32_t my_id_;
   int32_t nanosec_;
-  NodeInfo my_info_;
+  NodeInfo downstream_pull_;
+  NodeInfo downstream_push_;
   zmq::context_t *zmq_ctx_;
   std::string update_pull_endp_;
   std::string internal_pair_p2r_endp_; // pair socket connecting propagator and 
@@ -35,7 +36,8 @@ class Propagator : boost::noncopyable {
     Propagator *propagator_ptr_;
     sem_t *sync_sem_;
     int32_t nanosec_;
-    NodeInfo my_info_;
+    NodeInfo downstream_pull_;
+    NodeInfo downstream_push_;
     std::string internal_pair_p2r_endp_;
     std::string internal_pair_r2p_endp_;
     sem_t *internal_sync_sem_;
@@ -141,7 +143,6 @@ public:
   int DeregisterThr();
 
   int WaitTerm();
-  int GetErrCode();
   
 private:
   // when a peer's updates are propagated out, set st_ to end_ + 1
@@ -151,13 +152,13 @@ private:
     int64_t end_;
     
     bool Contains(const UpdateRange &_ur){
-      if(st_ <= _ur.st_ && end_ >= _ur.end) return true;
+      if(st_ <= _ur.st_ && end_ >= _ur.end_) return true;
       else return false;
     }
   };
 
   struct TableInfo{
-    int32_t upate_size_;
+    int32_t update_size_;
     ValueAddFunc vadd_func_;
     bool loop_;
     bool apply_updates_;
@@ -177,7 +178,6 @@ private:
 
   // write by propagator thread, read by application threads
   volatile PropagatorState state_;
-  volatile int errcode_; // 0 -> OK; nonzero -> error
   
   // Intialized by propagator thread, read by timer thread.
   // Timer thread is created after both strings are initialized. Since

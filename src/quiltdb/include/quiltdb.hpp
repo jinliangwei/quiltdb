@@ -12,12 +12,16 @@ namespace quiltdb {
 
 struct DBConfig{
   int32_t my_id_;
-  std::string my_ip_;
-  std::string hport_prop_;
-  std::string vport_prop_;
 
-  NodeInfo hnode_info_; // the horizontal downstream node
-  NodeInfo vnode_info_;
+  NodeInfo hnode_recv_pull_interface_;
+  NodeInfo hnode_recv_push_interface_;
+  NodeInfo hnode_prop_downstream_;
+  int32_t hexpected_prop_;
+
+  NodeInfo vnode_recv_pull_interface_;
+  NodeInfo vnode_recv_push_interface_;
+  NodeInfo vnode_prop_downstream_;
+  int32_t vexpected_prop_;
 
   // How long should horizontal and vertical propagation thread should 
   // wait between propagation.

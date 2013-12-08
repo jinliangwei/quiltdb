@@ -31,6 +31,8 @@ int main(int argc, char *argv[]){
 
   quiltdb::DBConfig dbconfig;
   dbconfig.my_id_ = 0;
+  dbconfig.hexpected_prop_ = 0;
+  dbconfig.vexpected_prop_ = 0;
   dbconfig.hbatch_nanosec_ = 500000;
   dbconfig.vbatch_nanosec_ = 500000; // 500 micro second
 
@@ -40,6 +42,9 @@ int main(int argc, char *argv[]){
   tconfig.vsize_ = sizeof(int);
   tconfig.vadd_func_ = IntAdd;
   tconfig.vsub_func_ = IntSub;
+  tconfig.loop_ = true;
+  tconfig.apply_updates_ = true;
+  tconfig.user_cbk_ = false;
 
   quiltdb::Table htable = db.CreateHTable(0, tconfig);
   //quitdb::Table vtable = db.CreateVTable(1, tconfig);

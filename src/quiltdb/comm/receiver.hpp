@@ -6,20 +6,24 @@
 
 #include <semaphore.h>
 #include <zmq.hpp>
+#include <pthread.h>
+#include <boost/unordered_map.hpp>
+#include <boost/thread/tss.hpp>
 
 namespace quiltdb {
 
 struct ReceiverConfig{
   int32_t my_id_;
-  NodeInfo upstream_;
+  NodeInfo my_push_;
+  NodeInfo my_pull_;
   int32_t num_expected_propagators_;
+
   zmq::context_t *zmq_ctx_;
   std::string update_push_endp_; // receive my own updates from internal 
                                  // propagator pair
   std::string internal_recv_pull_endp_;
   std::string internal_pair_recv_push_endp_;
 
-  sem_t *sync_sem_;
 };
 
 class Receiver {
@@ -28,17 +32,28 @@ class Receiver {
 
   struct ReceiverThrInfo {
     int32_t my_id_;
+    NodeInfo my_push_;
+    NodeInfo my_pull_;
     int32_t num_expected_propagators_;
-    int32_t internal_pair_endp_;
-    zmq::context_t *zmq_ctx;
+
+    zmq::context_t *zmq_ctx_;
     std::string update_push_endp_;
     std::string internal_recv_pull_endp_;
     std::string internal_pair_recv_push_endp_;
 
     sem_t *sync_sem_;
+
+    Receiver *receiver_ptr_;
   };
 
-  enum ReceiverState{INIT, RUN, TERM_PREP, TERM};
+  struct PeerPropagatorInfo {
+    bool has_started_;
+    bool has_replied_termination_;
+    
+    PeerPropagatorInfo():
+      has_started_(false),
+      has_replied_termination_(false){}
+  };
 
   /*
    * Receiver state transition and termination logic
@@ -99,10 +114,21 @@ public:
   int WaitTerm();
 
 private:
-  static void *ReceiverThrMain(void *argu);
+  static bool HasAllPeersAckedTerm(boost::unordered_map<int32_t, 
+							PeerPropagatorInfo> 
+				   &_peer_info);
+  static void *ReceiverThrMain(void *_argu);
   
-  volatile 
-
+  volatile ReceiverState state_;
+  ReceiverThrInfo thrinfo_;
+  zmq::context_t *zmq_ctx_;
+  pthread_t recv_thr_;
+  std::string internal_recv_pull_endp_;
+  bool have_signaled_term_;
+  
+  boost::unordered_map<int32_t, InternalTable*> table_dir_;
+  boost::thread_specific_ptr<zmq::socket_t> term_push_sock_;
+  
 };
 
 }
