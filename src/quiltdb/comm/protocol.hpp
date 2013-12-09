@@ -33,7 +33,7 @@ struct PUpdateBufferMsg {
 
 // messages to be received by propagator or receiver via TCP sock
 enum PropRecvMsgType{PropInit, PropInitACK, PropInitACKACK, PropStart,
-		     EPRUpdateBuffer, EPRTerminate, EPRTerminateAck};
+		     EPRUpdateBuffer, EPRTerminate, EPRTerminateACK};
 
 struct PropInitMsg{
   PropRecvMsgType msgtype_;
@@ -43,6 +43,11 @@ struct PropInitMsg{
 struct PropInitAckAckMsg {
   PropRecvMsgType msgtype_;
   int32_t node_id_;
+};
+
+struct EPRUpdateBufferMsg {
+  PropRecvMsgType msgtype_;
+  int32_t table_id_;
 };
 
 // messages to be received by receiver via inter-thread sock

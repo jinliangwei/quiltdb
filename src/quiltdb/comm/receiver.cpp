@@ -110,7 +110,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
   // receive updates from propagator
   boost::scoped_ptr<zmq::socket_t> update_pull_sock;
   // PUSH termination message to propagator
-  boost::scoped_ptr<zmq::socket_t> term_push_sock;
+  boost::scoped_ptr<zmq::socket_t> term_pub_sock;
   
   // inproc sockets
   // for communicating my own updates, also pull termination message
@@ -123,21 +123,20 @@ void *Receiver::ReceiverThrMain(void *_argu){
   bool have_replied_prop_pair_term = false;
   
   try{
-
-    /*
-    update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
-    std::string tcp_update_pull_endp = "tcp://" 
-      + thrinfo->my_info_.recv_pull_ip_ + ":"
-      + thrinfo->my_info_.recv_pull_port_;
-    update_pull_sock->bind(tcp_update_pull_endp.c_str());
-
-    term_pub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUB));
-    std::string tcp_term_push_endp = "tcp://"
-      + thrinfo->my_info_.recv_push_ip_ + ":"
-      + thrinfo->my_info_.recv_push_port_;
-    term_push_sock->bind(tcp_term_push_endp.c_str());
-    */
-
+    if(thrinfo->num_expected_propagators_ > 0){
+     
+      update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+      std::string tcp_update_pull_endp = "tcp://" 
+	+ thrinfo->my_info_.recv_pull_ip_ + ":"
+	+ thrinfo->my_info_.recv_pull_port_;
+      update_pull_sock->bind(tcp_update_pull_endp.c_str());
+      
+      term_pub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUB));
+      std::string tcp_term_push_endp = "tcp://"
+	+ thrinfo->my_info_.recv_push_ip_ + ":"
+	+ thrinfo->my_info_.recv_push_port_;
+      term_pub_sock->bind(tcp_term_push_endp.c_str());
+    }
     internal_recv_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
     internal_recv_pull_sock->bind(thrinfo->internal_recv_pull_endp_.c_str());
     VLOG(0) << "internal_recv_pull_sock binds to " 
@@ -159,7 +158,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
   }catch(...){
     LOG(FATAL) << "Failed setting up sockets";
   }
-  //while(1);
+
   //TODO: received connections from expected number of propagators
   // Recv from update_pull_sock, one message per propagator
   // Send message on term_push_sock one per propagator
@@ -173,75 +172,80 @@ void *Receiver::ReceiverThrMain(void *_argu){
     << "Send on internal_prop_recv_pair_sock failed, ret = " << ret;
 
   // Handshake iwth external propagator
-  
+
+  if(thrinfo->num_expected_propagators_ > 0){
   // Step 1: Propagator -> Receiver: PropInit
-  /*
-  boost::shared_array<uint8_t> data;
-  int32_t num_props;
-  for(num_props = 0; num_props < thrinfo->num_expected_propagators_; 
-      ++num_props){
-    ret = RecvMsg(*update_pull_sock, data);
-    CHECK_EQ(ret, sizeof(PropInitMsg)) << "RecvMsg failed ret = " << ret ;
-    PropInitMsg *msg = reinterpret_cast<PropInitMsg*>(data.get());
-    VLOG(2) << "Received PropInitMsg from " << msg->node_id_;
-  }
+    boost::shared_array<uint8_t> data;
+    int32_t num_props;
+    for(num_props = 0; num_props < thrinfo->num_expected_propagators_; 
+	++num_props){
+      ret = RecvMsg(*update_pull_sock, data);
+      CHECK_EQ(ret, sizeof(PropInitMsg)) << "RecvMsg failed ret = " << ret ;
+      PropInitMsg *msg = reinterpret_cast<PropInitMsg*>(data.get());
+      VLOG(2) << "Received PropInitMsg from " << msg->node_id_;
+    }
 
-  // Step 2: Receiver -> Propagator: PropInitACK
-  int32_t gid = 1;
-  PropRecvMsgType initack_msg = PropInitACK;
-  num_props = 0;
-  while(num_props < thrinfo->num_expected_propagators_){
-    ret = SendMsg(*term_push_sock, gid, (uint8_t*) &initack_msg,
-		  sizeof(PropRecvMsgType), 0);
-    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send InitAck failed, ret = "
-					   << ret;
-    sleep(1); // wait to allow the message to be propagated
-    
-    // Step 3: Propagator -> Receiver: PropInitACKACK
-    do{
-      ret = RecvMsgAsync(*update_pull_sock, data);
-      CHECK(ret >=0) << "RecvMsgAsync failed";
-      if(ret > 0){
+    // Step 2: Receiver -> Propagator: PropInitACK
+    int32_t gid = 1;
+    PropRecvMsgType initack_msg = PropInitACK;
+    num_props = 0;
+    while(num_props < thrinfo->num_expected_propagators_){
+      ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &initack_msg,
+		    sizeof(PropRecvMsgType), 0);
+      CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send InitAck failed, ret = "
+					     << ret;
+      sleep(1); // wait to allow the message to be propagated
+      
+      // Step 3: Propagator -> Receiver: PropInitACKACK
+      do{
+	ret = RecvMsgAsync(*update_pull_sock, data);
+	CHECK(ret >=0) << "RecvMsgAsync failed";
+	if(ret > 0){
+	  
+	  CHECK_EQ(ret, sizeof(PropInitAckAckMsg))
+	    << "Received malformed message";
 	
-	CHECK_EQ(ret, sizeof(PropInitAckAckMsg))
-	  << "Received malformed message";
-	
-	PropInitAckAckMsg *msg_ptr 
-	  = reinterpret_cast<PropInitAckAckMsg*>(data.get());
-	
-	CHECK_EQ(msg_ptr->msgtype_, PropInitACKACK) 
-	  << "Received malformed message"
-	  << " msgtype = " << msg_ptr->msgtype_
-	  << " expected = " << PropInitACKACK;
-	
-	VLOG(2) << "Received PropInitAckAckMsg from" 
-		<< msg_ptr->node_id_;
+	  PropInitAckAckMsg *msg_ptr 
+	    = reinterpret_cast<PropInitAckAckMsg*>(data.get());
+	  
+	  CHECK_EQ(msg_ptr->msgtype_, PropInitACKACK) 
+	    << "Received malformed message"
+	    << " msgtype = " << msg_ptr->msgtype_
+	    << " expected = " << PropInitACKACK;
+	  
+	  VLOG(2) << "Received PropInitAckAckMsg from" 
+		  << msg_ptr->node_id_;
 	++num_props;
-      }
-    }while(ret > 0); 
-  }
-
-  // Step 4: Receiver -> Propagator: PropStart
-  PropRecvMsgType prop_start_msg = PropStart;
-  ret = SendMsg(*term_push_sock, gid, (uint8_t*) &prop_start_msg,
-		sizeof(PropRecvMsgType), 0);
-  CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send PropStart failed, ret = " 
-					 << ret;
-  
+	}
+      }while(ret > 0); 
+    }
+    
+    // Step 4: Receiver -> Propagator: PropStart
+    PropRecvMsgType prop_start_msg = PropStart;
+    ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &prop_start_msg,
+		  sizeof(PropRecvMsgType), 0);
+    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send PropStart failed, ret = " 
+					   << ret;
+  }  
   // Handshake with external propagator done
-  */
-
+  
   receiver_ptr->state_ = RUN;
   sem_post(thrinfo->sync_sem_);
   
   // TODO: adjust number when TCP sockets are set up
   int num_poll_sock = 1;
+  if(thrinfo->num_expected_propagators_ > 0){
+    ++num_poll_sock;
+  }
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
   pollitems[0].socket = *internal_recv_pull_sock;
   pollitems[0].events = ZMQ_POLLIN;
-  //pollitems[1].socket = *update_pull_sock;
-  //pollitems[1].events = ZMQ_POLLIN;
   
+  if(thrinfo->num_expected_propagators_ > 0){
+    pollitems[1].socket = *update_pull_sock;
+    pollitems[1].events = ZMQ_POLLIN;
+  }
+
   while(true){
     try{
       int num_poll;
@@ -382,12 +386,117 @@ void *Receiver::ReceiverThrMain(void *_argu){
       continue;
     }
     
-    /*
-    if(pollitems[1].revents){
-      
-      continue;
-      }*/
+   
+    if(thrinfo->num_expected_propagators_ > 0){
+      if(pollitems[1].revents){
+	 boost::shared_array<uint8_t> data;
+	 int len;
+	 PropRecvMsgType msgtype;
+	 len = RecvMsg(*internal_recv_pull_sock, data);
+	 msgtype = *(reinterpret_cast<PropRecvMsgType*>(data.get()));
+	 switch(msgtype){
+	 case EPRUpdateBuffer:
+	   {
+	     EPRUpdateBufferMsg *update_buff_msg 
+	       = reinterpret_cast<EPRUpdateBufferMsg*>(data.get());
+	     int32_t table_id = update_buff_msg.table_id_;
+	     
+	     len = RecvMsg(*internal_recv_pull_sock, data);
+	     CHECK(len > 0) << "Received UpdateBuffer size not positive";
+	 
+	     if(receiver_ptr->state_ != RUN) break;
+	     
+	     uint8_t *recv_update_buff_mem = new uint8_t[len];
+	     memcpy(recv_update_buff_mem, data.get(), len);
+	     
+	     UpdateBuffer *recv_update_buff 
+	       = reinterpret_cast<UpdateBuffer*>(recv_update_buff_mem);
+	     UpdateRange recv_my_update_range;
+	     bool recv_found = recv_upate_buff->GetNodeRange(my_id, 
+					     &(recv_my_update_range.st_)
+       					     &(recv_my_update_range.end_));
+	     boost::unordered_map<int32_t, InternalTable*>::iterator
+	       table_iter = table_dir_.find(table_id);
+	     CHECK(table_iter != table_dir_.end());
+	     ValueSubFunc vsub_func = table_iter->second->get_vsub_func();
+	     UpdateBufferCbk ucbk = table_iter->second->get_update_buff_cnk();
+	     bool user_callback = table_iter->second->get_user_cbk();
 
+	     if(recv_found){
+	       boost::unordered_map<int32_t, 
+				    std::queue<UpdateBuffer*> >::my_updates_iter
+		 = my_updates.find(table_id);
+	       
+	       CHECK(my_updates_iter != my_updates.end()) 
+		 << "Cannot find my updates to cancel duplicated updates";
+	       int64_t seq_num = recv_my_udpate_range.st_;
+	       std::queue<UpdateBuffer*> &my_updates_queue = my_updates[table_id];
+	       
+	       do{
+		 
+		 UpdateBuffer *my_update_buff = my_updates_queue.front();
+		 UpdateRange my_update_range;
+		 bool found = my_upate_buff->GetNodeRange(my_id, 
+							  &(my_update_range.st_)
+							  &(my_update_range.end_));
+		 CHECK(found) 
+		   << "Cannot find my update range from my update buffer";
+		 CHECK(recv_my_update_range.Contains(my_update_range))
+		   << "My update range is not contained";
+		 CHECK_EQ(my_update_range.st_, seq_num);
+		 seq_num = my_update_range.end_;
+		 my_updates_queue.pop();
+		 
+		 int ret = my_update_buff->StartIteration();
+		 CHECK_EQ(ret, 0) << "start iteration failed";
+		 int64_t key;
+		 uint8_t *my_delta;
+		 uint8_t *recv_delta;
+		 my_delta = my_update_buff->NextUpdate(&key);
+		 
+		 while(my_delta != NULL){
+		   recv_delta = recv_update_buff->GetUpdate(key);
+		   CHECK(recv_delta != NULL) 
+		     << "Cannot find update in received buffer";	 
+		   vsub_func(recv_delta, my_delta, 
+			     table_iter->second->get_vsize());
+		 }
+		 UpdateBuffer::DestroyUpdateBuffer(my_update_buff);
+	       }while(seq_num < recv_my_update_range.end_);
+	     }    
+
+	     uint8_t *recv_cbk_update_buff_mem;
+	     UpdateBuffer *recv_cbk_update_buff;
+ 
+	     if(user_cbk){
+	       recv_cbk_update_buff_mem = new uint8_t[len];
+	       memcpy(recv_cbk_update_buff_mem_cbk, recv_update_buff_mem, len);
+	     
+	       recv_cbk_update_buff 
+		 = reinterpret_cast<UpdateBuffer*>(recv_cbk_update_buff_mem);
+	     }
+
+	     PUpdateBufferMsg update_buff_msg;
+	     update_buff_msg.msgtype_ = EPUpdateBuffer;
+	     update_buff_msg.update_buffer_ptr_ = recv_update_buff;
+	     
+	     SendMsg(*internal_update_push_sock, (uint8_t*) &update_buff_msg, 
+		     sizeof(PUpdateBufferMsg), 0);
+	     if(user_cbk){
+	       ucbk(table_id, recv_cbk_update_buff);
+	       delete[] recv_cbk_update_buff_mem;
+	     }
+	   }
+	 break;
+	 case EPRTerminateACK:
+	   {
+	     
+	   }
+	   break;
+	 }
+	 continue;
+      }
+    }
   }
   LOG(FATAL) << "Error!! Receiver exiting!";
   return 0;

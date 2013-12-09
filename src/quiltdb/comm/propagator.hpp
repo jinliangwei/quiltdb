@@ -143,17 +143,6 @@ public:
   int WaitTerm();
   
 private:
-  // when a peer's updates are propagated out, set st_ to end_ + 1
-  // so if st_ > end_, there's no update from this peer 
-  struct UpdateRange{
-    int64_t st_;
-    int64_t end_;
-    
-    bool Contains(const UpdateRange &_ur){
-      if(st_ <= _ur.st_ && end_ >= _ur.end_) return true;
-      else return false;
-    }
-  };
 
   struct TableInfo{
     int32_t update_size_;
@@ -166,6 +155,9 @@ private:
   // received updates.
   static int CommitUpdates(int32_t _table_id, UpdateBuffer *_updates);
   static int StopLocalReceiver();
+  static int AddUpdate(int64_t _key, uint8_t *_update_delta, int32_t _vsize,
+		       ValueAddFunc _table_vadd,
+		       boost::unordered_map<int64_t, uint8_t*> &_table_updates);
 
   static int32_t TimerHandler(void * _propagator, int32_t _rem);
   static void *PropagatorThrMain(void *_argu);

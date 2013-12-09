@@ -4,6 +4,7 @@
 #include <boost/unordered_map.hpp>
 #include "table.hpp"
 #include <quiltdb/utils/config_parser.hpp>
+#include <quiltdb/utils/memstruct.hpp>
 
 #include <quiltdb/comm/propagator.hpp>
 #include <quiltdb/comm/receiver.hpp>
@@ -26,7 +27,7 @@ struct DBConfig{
   // <= 0 means no waiting.
   int32_t hbatch_nanosec_;
   int32_t vbatch_nanosec_;
-
+  
 };
 
 class QuiltDB {

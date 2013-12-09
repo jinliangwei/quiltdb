@@ -5,6 +5,18 @@
 
 namespace quiltdb {
 
+// when a peer's updates are propagated out, set st_ to end_ + 1
+// so if st_ > end_, there's no update from this peer 
+struct UpdateRange{
+  int64_t st_;
+  int64_t end_;
+  
+  bool Contains(const UpdateRange &_ur){
+    if(st_ <= _ur.st_ && end_ >= _ur.end_) return true;
+    else return false;
+  }
+};
+
 class UpdateBuffer{
 public:
 
@@ -25,10 +37,16 @@ public:
 
   int AppendUpdate(int64_t _key, const uint8_t *_update); 
   int StartIteration();
-  const uint8_t *NextUpdate(int64_t *key);
+  uint8_t *NextUpdate(int64_t *key);
+
+  uint8_t *GetUpdate(int64_t _key);
   
   int UpdateNodeRange(int32_t _node_id, int64_t _key_st, int64_t _key_end);
+  int DeleteNodeRange(int32_t _node_id);
   bool GetNodeRange(int32_t _node_id, int64_t *_key_st, int64_t *_key_end);
+  
+  int StartNodeRangIteration();
+  int32_t NextNodeRange(int64_t *_key_st, int64_t *_key_end);
 
   int32_t get_update_size();
   int32_t get_buff_size();
@@ -50,6 +68,8 @@ private:
   int32_t update_st_offset_;
   int32_t update_end_offset_; // offset pointing to the next empty update slot
   int32_t update_iter_offset_;
+  
+  int32_t node_range_iter_offset_;
 };
 
 }

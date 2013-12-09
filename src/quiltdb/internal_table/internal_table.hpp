@@ -23,6 +23,7 @@ struct TableConfig{
   bool loop_;
   bool apply_updates_;
   bool user_cbk_;
+  UpdateBufferCbk update_buff_cbk_;
 };
 
 class InternalTable {
@@ -50,6 +51,14 @@ public:
     return vsub_func_;
   }
 
+  UpdateBufferCbk get_update_buff_cbk(){
+    return update_buff_cbk_;
+  }
+
+  bool get_user_cbk(){
+    return user_cbk_;
+  }
+
   void set_propagator(Propagator *_prop){
     propagator = _prop;
   }
@@ -73,6 +82,7 @@ private:
   bool loop_;
   bool apply_updates_;
   bool user_cbk_; // call user defined callback function
+  UpdateBufferCbk update_buff_cbk_;
 };
 
 template<typename ValueType>

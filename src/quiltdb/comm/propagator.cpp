@@ -171,6 +171,21 @@ int32_t Propagator::TimerHandler(void * _propagator, int32_t _rem){
   return msg_ptr->nanosec_;
 }
 
+int Propagator::AddUpdate(int64_t _key, uint8_t *_update_delta, int32_t _vsize,
+			  ValueAddFunc _table_vadd,
+			  boost::unordered_map<int64_t, uint8_t*> &_table_updates){
+    boost::unordered_map<int64_t, uint8_t*>::iterator update_itr 
+    = _table_updates.find(key);
+	    
+  if(update_itr == _table_updates.end()){
+    _table_updates[key] = new uint8_t[_vsize];
+    memset(_table_updates[key], 0, _vsize);
+  }
+  _table_vadd(_table_updates[key], _update_delta, _visze);
+
+  return 0;
+}
+
 void *Propagator::PropagatorThrMain(void *_argu){
 
   VLOG(0) << "created propagator thread!";
@@ -252,23 +267,23 @@ void *Propagator::PropagatorThrMain(void *_argu){
   VLOG(0) << "propagator thread start initializing sockets";
 
   try{    
+    
     // TCP sockets
-
-    /*
-    prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
-    std::string tcp_prop_push_endp = "tcp://" 
-      + thrinfo->downstream_recv_.recv_pull_ip_ + ":"
-      + thrinfo->downstream_recv_.recv_pull_port_;
-    prop_push_sock->connect(tcp_prop_push_endp.c_str());
-
-    term_sub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_SUB));
-    std::string tcp_term_sub_endp = "tcp://" 
-      + thrinfo->downstream_recv_.recv_push_ip_ + ":"
-      + thrinfo->downstream_recv_.recv_push_port_;
-    term_sub_sock->connect(tcp_term_sub_endp.c_str());
-    int32_t gid = 1;
-    term_sub_sock->setsockopt(ZMQ_SUBSCRIBE, &gid, sizeof(int32_t));
-    */
+    if(thrinfo->downstream_recv_.node_id_ >= 0){
+      prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+      std::string tcp_prop_push_endp = "tcp://" 
+	+ thrinfo->downstream_recv_.recv_pull_ip_ + ":"
+	+ thrinfo->downstream_recv_.recv_pull_port_;
+      prop_push_sock->connect(tcp_prop_push_endp.c_str());
+      
+      term_sub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_SUB));
+      std::string tcp_term_sub_endp = "tcp://" 
+	+ thrinfo->downstream_recv_.recv_push_ip_ + ":"
+	+ thrinfo->downstream_recv_.recv_push_port_;
+      term_sub_sock->connect(tcp_term_sub_endp.c_str());
+      int32_t gid = 1;
+      term_sub_sock->setsockopt(ZMQ_SUBSCRIBE, &gid, sizeof(int32_t));
+    }
 
     // inproc sockets
     update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
@@ -300,52 +315,53 @@ void *Propagator::PropagatorThrMain(void *_argu){
 
   // Handshake between propagator and external receiver
 
-  /*
+  if(thrinfo->downstream_recv_.node_id_ >= 0){
   // Step 1: Propagator -> Receiver: PropInit
-  PropInitMsg initmsg;
-  initmsg.msgtype_ = PropInit;
-  initmsg.node_id_ = my_id;
+    PropInitMsg initmsg;
+    initmsg.msgtype_ = PropInit;
+    initmsg.node_id_ = my_id;
   
-  ret = SendMsg(*prop_push_sock, (uint8_t *) &initmsg, sizeof(PropInitMsg), 0);
-  CHECK_EQ(ret, sizeof(PropInitMsg)) << "Send InitMsg failed";
-  
-  // Step 2: Receiver -> Propagator: PropInitACK
-  ret = RecvMsg(*term_sub_sock, data);
-  CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive InitAckMsg failed";
-  PropRecvMsgType *ackmsg = reinterpret_cast<PropRecvMsgType*>(data.get());
-  CHECK(*ackmsg == PropInitACK) << "Received message unexpected " << *ackmsg;
-
-  // Step 3: Propagator -> Receiver: PropInitACKACK
-  PropInitAckAckMsg initackack_msg;
-  initackack_msg.msgtype_ = PropInitACKACK;
-  initackack_msg.node_id_ = my_id;
-  
-  ret = SendMsg(*prop_push_sock, (uint8_t *) &initackack_msg, 
-		sizeof(PropInitAckAckMsg), 0);
-  CHECK_EQ(ret, sizeof(PropInitAckAckMsg)) << "Send InitAckAckMsg failed";
-  VLOG(0) << "Sent out initackack_msg";
-
-  // Step 4: Receiver -> Propagator: PropStart
-  while(1){
-    ret = RecvMsg(*term_sub_sock, data);
-    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive PropStart failed";
+    ret = SendMsg(*prop_push_sock, (uint8_t *) &initmsg, sizeof(PropInitMsg), 0);
+    CHECK_EQ(ret, sizeof(PropInitMsg)) << "Send InitMsg failed";
     
-    PropRecvMsgType *prop_start_msg 
-      = reinterpret_cast<PropRecvMsgType*>(data.get());
-    if(*prop_start_msg == PropStart){
-      break;
+    // Step 2: Receiver -> Propagator: PropInitACK
+    ret = RecvMsg(*term_sub_sock, data);
+    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive InitAckMsg failed";
+    PropRecvMsgType *ackmsg = reinterpret_cast<PropRecvMsgType*>(data.get());
+    CHECK(*ackmsg == PropInitACK) << "Received message unexpected " << *ackmsg;
+    
+  // Step 3: Propagator -> Receiver: PropInitACKACK
+    PropInitAckAckMsg initackack_msg;
+    initackack_msg.msgtype_ = PropInitACKACK;
+    initackack_msg.node_id_ = my_id;
+    
+    ret = SendMsg(*prop_push_sock, (uint8_t *) &initackack_msg, 
+		  sizeof(PropInitAckAckMsg), 0);
+    CHECK_EQ(ret, sizeof(PropInitAckAckMsg)) << "Send InitAckAckMsg failed";
+    VLOG(0) << "Sent out initackack_msg";
+    
+    // Step 4: Receiver -> Propagator: PropStart
+    while(1){
+      ret = RecvMsg(*term_sub_sock, data);
+      CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive PropStart failed";
+      
+      PropRecvMsgType *prop_start_msg 
+	= reinterpret_cast<PropRecvMsgType*>(data.get());
+      if(*prop_start_msg == PropStart){
+	break;
+      }
     }
   }
-  */
-  // Send message to prop_push_sock
-  // Wait 1 message from term_pull_sock
-
+  
   VLOG(3) << "propagator thread initiazlied all sockets!";
 
   propagator_ptr->state_ = RUN;
   sem_post(thrinfo->sync_sem_);
   
   int num_poll_sock = 1;
+  int timer_pull_sock_idx = -1;
+  int tcp_update_pull_sock_idx = -1;
+  
   NanoTimer timer;
   if(thrinfo->nanosec_ > 0){
     try{
@@ -357,21 +373,30 @@ void *Propagator::PropagatorThrMain(void *_argu){
       LOG(FATAL) << "Failed to set up sockets";
     }
     ++num_poll_sock;
+    timer_pull_sock_idx = num_poll_sock - 1;
     int ret = timer.Start(thrinfo->nanosec_, TimerHandler,
 			  thrinfo->propagator_ptr_);
+  }
+
+  if(thrinfo->downstream_recv_.node_id_ >= 0){
+    ++num_poll_sock;
+    tcp_update_pull_sock_idx = num_poll_sock - 1;  
   }
   
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
   pollitems[0].socket = *update_pull_sock;
   pollitems[0].events = ZMQ_POLLIN;
-  //pollitems[0].socket = *term_pull_sock;
-  //pollitems[0].events = ZMQ_POLLIN;
 
   if(thrinfo->nanosec_ > 0){
-    pollitems[1].socket = *timer_pull_sock;
-    pollitems[1].events = ZMQ_POLLIN;
-  }
+    pollitems[timer_pull_sock_idx].socket = *timer_pull_sock;
+    pollitems[timer_pull_sock_idx].events = ZMQ_POLLIN;
+  }  
   
+  if(thrinfo->downstream_recv_.node_id_ >= 0){
+    pollitems[tcp_update_pull_sock_idx].socket = *term_sub_sock;
+    pollitems[tcp_update_pull_sock_idx].events = ZMQ_POLLIN;
+  }
+
   VLOG(0) << "Starts looping!";
   while(true){
     try {
@@ -388,7 +413,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
     
     // give timer trigger the highest priority to simulate accurate timer
     if(thrinfo->nanosec_ > 0){
-      if(pollitems[1].revents){
+      if(pollitems[timer_pull_sock_idx].revents){
 	boost::shared_array<uint8_t> data;
 	int len;
 	TimerMsgType msgtype;
@@ -542,6 +567,19 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  my_update_range[table_id].st_ = my_update_range[table_id].end_ + 1;
 	  
 	  //TODO: send update buffer to downstream receiver!
+	  EPRUpdateBufferMsg update_buff_msg;
+	  update_buff_msg.msgtype_ = EPRUpdateBuffer;
+	  update_buff_msg.table_id_ = table_id;
+
+	  ret = SendMsg(*prop_push_sock, (uint8_t*) &update_buff_msg, 
+			sizeof(EPRUpdateBufferMsg), ZMQ_SNDMORE);
+	  CHECK_EQ(ret, sizeof(EPRUpdateBufferMsg)) 
+	    << "Send EPRUpdateBuffer failed";
+	  
+	  ret = SendMsg(*prop_push_sock, (uint8_t*) update_buff,
+			update_buff->get_buff_size(), 0);
+	  CHECK_EQ(ret, update_buff->get_buff_size()) 
+	    << "Send EPRUpdateBuffer failed";
 	  UpdateBuffer::DestroyUpdateBuffer(update_buff);
 	  
 	}
@@ -609,24 +647,16 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    // send it out
 	  }else{
 	    uint8_t *update_delta = reinterpret_cast<uint8_t*>(data.get());
+	    
 	    boost::unordered_map<int32_t, TableInfo>::const_iterator itr 
 	      = propagator_ptr->table_dir_.find(tid);
 	    
 	    CHECK(itr != propagator_ptr->table_dir_.end()) 
 		  << "Table " << tid << " does not exist";
-		  
+	    
 	    ValueAddFunc table_vadd = itr->second.vadd_func_;
-	    boost::unordered_map<int64_t, uint8_t*>::iterator update_itr 
-	      = update_store[tid].find(key);
-	    
-	    if(update_itr == update_store[tid].end()){
-	      update_store[tid][key] = new uint8_t[len];
-	      memset(update_store[tid][key], 0, len);
-	    }
-	    table_vadd(update_store[tid][key], update_delta, len);
-	    
-	    //VLOG(0) << "propagator_ptr->table_dir_[tid].loop_ = "
-	    //    << propagator_ptr->table_dir_[tid].loop_;
+	    AddUpdate(key, update_delta, len, table_vadd, update_store[tid]);
+
 	    if(propagator_ptr->table_dir_[tid].loop_){
 	      boost::unordered_map<int64_t, uint8_t*>::iterator my_update_itr
 		= my_update_store[tid].find(key);
@@ -635,8 +665,6 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		memset(my_update_store[tid][key], 0, len);
 	      }
 	      table_vadd(my_update_store[tid][key], update_delta, len);
-	      //VLOG(0) << "append update " << key
-	      //      << " to my own update";
 	    }
 	  }
 	}
@@ -649,9 +677,42 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  
 	  UpdateBuffer *update_buffer_ptr 
 	    = update_buffer_msg->update_buffer_ptr_;
+	  int32_t table_id = update_buffer_msg->table_id_;
+
+	  boost::unordered_map<int32_t, TableInfo>::const_iterator itr 
+	    = propagator_ptr->table_dir_.find(table_id);
 	  
+	  CHECK(itr != propagator_ptr->table_dir_.end()) 
+	    << "Table " << tid << " does not exist";
+	  
+	  ValueAddFunc table_vadd = itr->second.vadd_func_;
+	  int32_t update_size = itr->second.update_size_;
+
 	  if(propagator_ptr->state_ == RUN){
-	    // TODO: add local updates to buffer and send it out
+	    update_buff_ptr->StartIteration();
+	    uint8_t *delta;
+	    int64_t key;
+	    delta = update_buff_ptr->NextUpdate(&key);
+	    while(delta != NULL){
+	      AddUpdate(key, delta, update_size, table_vadd, 
+			updates_store[table_id]);
+	      delta = update_buff_ptr->NextUpdate(&key);
+	    }
+	    
+	    boost::<int32_t, boost::<int32_t, UpdateRange> >::iterator
+	      table_update_iter = table_peers_update_range.find(table_id);
+	    
+	    update_buffer_ptr->StartNodeRageIteration();
+	    int32_t node_id;
+	    UpdateRange update_range;
+	    node_id = update_buffer_ptr->NextNodeRange(&(update_range.st_),
+						       &(update_range.end_));
+	    while(node_id >= 0){
+
+	    }
+	    
+	  }else{
+
 	  }
 	  // TODO: delete update_buffer_ptr
 	}

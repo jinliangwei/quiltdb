@@ -117,7 +117,7 @@ int UpdateBuffer::StartIteration(){
   return 0;
 }
 
-const uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
+uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   
   if(update_iter_offset_ >= update_end_offset_) return NULL;
 
@@ -131,6 +131,24 @@ const uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   update_iter_offset_ += (sizeof(int64_t) + update_size_);
   
   return (update_iter_ptr + sizeof(int64_t));
+}
+
+uint8_t *UpdateBuffer::GetUpdate(int64_t _key){
+  uint8_t *update_ptr = reinterpret_cast<uint8_t*>(this) 
+    + update_st_offset_;
+
+  int32_t num_updates;
+
+  for(num_updates = 0; num_updates < num_updates_occupied_; ++num_updates){
+    int64_t *key_ptr = reinterpret_cast<int64_t*>(update_iter_ptr);
+    int64_t key = *key_ptr;
+    if(key == _key){
+      return (update_ptr + sizeof(int64_t));
+    }
+    key_ptr += (sizeof(int64_t) + update_size_);
+  }
+  return NULL;
+
 }
 
 int UpdateBuffer::UpdateNodeRange(int32_t _node_id, int64_t _key_st, 
@@ -170,6 +188,35 @@ int UpdateBuffer::UpdateNodeRange(int32_t _node_id, int64_t _key_st,
   return 0;
 }
 
+int UpdateBuffer::DeleteNodeRange(int32_t _node_id){
+
+  uint8_t *node_range_ptr = reinterpret_cast<uint8_t*>(this) 
+    + node_range_st_offset_;
+
+  int32_t node_range_idx;
+
+  bool found = false;
+  
+  for(node_range_idx = 0; node_range_idx < node_range_capacity_; 
+      ++node_range_idx){
+
+    int32_t *node_id_ptr = reinterpret_cast<int32_t*>(node_range_ptr);
+    int64_t *node_range_st_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
+							    + sizeof(int32_t));
+    int64_t *node_range_end_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
+							     + sizeof(int32_t)
+							     + sizeof(int64_t));
+    if(*node_id_ptr < 0) break;
+    if(*node_id_ptr == _node_id){
+      *node_id_ptr = -1;
+      return 0;
+    }
+
+    node_range_ptr += (sizeof(int32_t) + sizeof(int64_t) + sizeof(int64_t));
+  }
+  return -1;
+}
+
 bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st, 
 			       int64_t *_key_end){
   uint8_t *node_range_ptr = reinterpret_cast<uint8_t*>(this) 
@@ -200,6 +247,43 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
   }
   return found;
 }
+
+int UpdateBuffer::StartNodeRangIteration(){
+  node_range_iter_offset_ = node_range_st_offset_;
+  return 0;
+}
+
+int32_t UpdateBuffer::NextNodeRange(int64_t *_key_st, int64_t *_key_end){
+
+  if(node_range_iter_offset_ >= update_st_offset_) return -1;
+
+  uint8_t *node_range_iter_ptr = reinterpret_cast<uint8_t*>(this) 
+    + node_range_iter_offset_;
+  
+  int32_t *peer_id_ptr = reinterpret_cast<int32_t*>(node_range_iter_ptr);
+  
+  while((*peer_id_ptr < 0) && (node_range_iter_offset_ >= update_st_offset_)){
+    node_range_iter_offset_ += (sizeof(int32_t) + sizeof(int64_t)*2);
+    
+    node_range_iter_ptr = reinterpret_cast<uint8_t*>(this) 
+      + node_range_iter_offset_;
+    
+    peer_id_ptr = reinterpret_cast<int32_t*>(node_range_iter_ptr);
+  }
+  
+  if(*peer_id_ptr < 0) return -1;
+  
+  uint8_t *key_st_ptr = node_range_iter_ptr + sizeof(int32_t);
+  uint8_t *key_end_ptr = key_st_ptr + sizeof(int64_t);
+
+  *_key_st = *(reinterpret_cast<int64_t*>(key_st_ptr));
+  *_key_end = *(reinterpret_cast<int64_t*>(key_end_ptr));
+
+  node_range_iter_offset_ += (sizeof(int32_t) + sizeof(int64_t)*2);
+
+  return *peer_id_ptr;
+}
+
 
 int32_t UpdateBuffer::get_update_size(){
   return  update_size_;

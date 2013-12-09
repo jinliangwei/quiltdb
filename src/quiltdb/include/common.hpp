@@ -8,6 +8,9 @@
 typedef int (*ValueAddFunc)(uint8_t *, uint8_t *, int32_t);
 typedef int (*ValueSubFunc)(uint8_t *, uint8_t *, int32_t);
 
+typedef void (UpdateBufferCbk*)(int32_t _table_id, 
+				UpdateBuffer *_update_buffer);
+
 struct NodeInfo{
   int32_t node_id_;
   std::string recv_pull_ip_;
