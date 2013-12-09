@@ -131,7 +131,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
       + thrinfo->my_info_.recv_pull_port_;
     update_pull_sock->bind(tcp_update_pull_endp.c_str());
 
-    term_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+    term_pub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUB));
     std::string tcp_term_push_endp = "tcp://"
       + thrinfo->my_info_.recv_push_ip_ + ":"
       + thrinfo->my_info_.recv_push_port_;
@@ -149,7 +149,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
     VLOG(0) << "internal_pair_recv_push_sock connects to "
 	    << thrinfo->internal_pair_recv_push_endp_;
 
-    internal_update_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUB));
+    internal_update_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
     internal_update_push_sock->connect(thrinfo->update_push_endp_.c_str());
     VLOG(0) << "internal_update_push_sock connects to "
 	    << thrinfo->update_push_endp_;
