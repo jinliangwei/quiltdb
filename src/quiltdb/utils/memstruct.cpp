@@ -140,7 +140,7 @@ uint8_t *UpdateBuffer::GetUpdate(int64_t _key){
   int32_t num_updates;
 
   for(num_updates = 0; num_updates < num_updates_occupied_; ++num_updates){
-    int64_t *key_ptr = reinterpret_cast<int64_t*>(update_iter_ptr);
+    int64_t *key_ptr = reinterpret_cast<int64_t*>(update_ptr);
     int64_t key = *key_ptr;
     if(key == _key){
       return (update_ptr + sizeof(int64_t));
@@ -248,7 +248,7 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
   return found;
 }
 
-int UpdateBuffer::StartNodeRangIteration(){
+int UpdateBuffer::StartNodeRangeIteration(){
   node_range_iter_offset_ = node_range_st_offset_;
   return 0;
 }

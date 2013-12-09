@@ -28,6 +28,7 @@ struct PUpdateLogMsg {
 
 struct PUpdateBufferMsg {
   PropagatorMsgType msgtype_;
+  int32_t table_id_;
   UpdateBuffer *update_buffer_ptr_;
 };
 
@@ -48,6 +49,11 @@ struct PropInitAckAckMsg {
 struct EPRUpdateBufferMsg {
   PropRecvMsgType msgtype_;
   int32_t table_id_;
+};
+
+struct PRTerminateAckMsg {
+  PropRecvMsgType msgtype_;
+  int32_t node_id_;
 };
 
 // messages to be received by receiver via inter-thread sock

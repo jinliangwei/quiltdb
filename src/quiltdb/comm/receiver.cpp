@@ -137,6 +137,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	+ thrinfo->my_info_.recv_push_port_;
       term_pub_sock->bind(tcp_term_push_endp.c_str());
     }
+
     internal_recv_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
     internal_recv_pull_sock->bind(thrinfo->internal_recv_pull_endp_.c_str());
     VLOG(0) << "internal_recv_pull_sock binds to " 
@@ -183,6 +184,8 @@ void *Receiver::ReceiverThrMain(void *_argu){
       CHECK_EQ(ret, sizeof(PropInitMsg)) << "RecvMsg failed ret = " << ret ;
       PropInitMsg *msg = reinterpret_cast<PropInitMsg*>(data.get());
       VLOG(2) << "Received PropInitMsg from " << msg->node_id_;
+      peer_prop_info[msg->node_id_].has_started_ = true;
+      peer_prop_info[msg->node_id_].has_replied_termination_ = false;
     }
 
     // Step 2: Receiver -> Propagator: PropInitACK
@@ -215,7 +218,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	  
 	  VLOG(2) << "Received PropInitAckAckMsg from" 
 		  << msg_ptr->node_id_;
-	++num_props;
+	  ++num_props;
 	}
       }while(ret > 0); 
     }
@@ -333,22 +336,16 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    have_replied_prop_pair_term = true;
 	    
 	    // TODO: remove this return after setting TCP sockets
-	    receiver_ptr->state_ = TERM;
-	    VLOG(0) << "Receiver exiting!";
-	    return 0;
+	    //receiver_ptr->state_ = TERM;
+	    //VLOG(0) << "Receiver exiting!";
+	    //return 0;
 	  }
-	  /*
-	    // TODO: send termination message to my propagators
-	    // 
-	  boost::unordered_map<int32_t, PeerPropagatorInfo>::interator
-	    peer_info_iter;
-	  for(peer_info_iter = peer_prop_info.begin();
-	      peer_info_iter != peer_prop_info.end();
-	      peer_ifno_iter++){
-	    
-	      }
-	  */
 	  
+	  PropRecvMsgType term_msg = EPRTerminate;
+	  int32_t gid = 1;
+	  int ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &term_msg, 
+			    sizeof(PropRecvMsgType), 0);
+	  CHECK_EQ(ret, sizeof(PropRecvMsgType));
 	}
 	break;
       case EPRInternalTerminate:
@@ -366,13 +363,13 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	      << "Send EPRecvInternalTerminateACK failed";
 	    have_replied_prop_pair_term = true;
 	    VLOG(0) << "Send EPRecvInternalTerminateACK to propagator";
-	    /*if(HasAllPeersAckedTerm(peer_prop_info)){
+	    if(HasAllPeersAckedTerm(peer_prop_info) 
+	       && have_replied_prop_pair_term){
 	      receiver_ptr->state_ = TERM;
+	      delete[] pollitems;
+	      VLOG(0) << "Receiver exiting from EPRInternalTerminate!";
 	      return NULL;
-	      }*/
-	    receiver_ptr->state_ = TERM;
-	    VLOG(0) << "Receiver exiting from EPRInternalTerminate!";
-	    return NULL;
+	    }
 	  }else{
 	    LOG(FATAL) << "I should not be in this state " 
 		       << receiver_ptr->state_;
@@ -399,7 +396,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	   {
 	     EPRUpdateBufferMsg *update_buff_msg 
 	       = reinterpret_cast<EPRUpdateBufferMsg*>(data.get());
-	     int32_t table_id = update_buff_msg.table_id_;
+	     int32_t table_id = update_buff_msg->table_id_;
 	     
 	     len = RecvMsg(*internal_recv_pull_sock, data);
 	     CHECK(len > 0) << "Received UpdateBuffer size not positive";
@@ -412,32 +409,33 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	     UpdateBuffer *recv_update_buff 
 	       = reinterpret_cast<UpdateBuffer*>(recv_update_buff_mem);
 	     UpdateRange recv_my_update_range;
-	     bool recv_found = recv_upate_buff->GetNodeRange(my_id, 
-					     &(recv_my_update_range.st_)
-       					     &(recv_my_update_range.end_));
 	     boost::unordered_map<int32_t, InternalTable*>::iterator
-	       table_iter = table_dir_.find(table_id);
-	     CHECK(table_iter != table_dir_.end());
+	       table_iter = receiver_ptr->table_dir_.find(table_id);
+	     CHECK(table_iter != receiver_ptr->table_dir_.end());
 	     ValueSubFunc vsub_func = table_iter->second->get_vsub_func();
-	     UpdateBufferCbk ucbk = table_iter->second->get_update_buff_cnk();
-	     bool user_callback = table_iter->second->get_user_cbk();
+	     UpdateBufferCbk ucbk = table_iter->second->get_update_buff_cbk();
+	     bool do_user_cbk = table_iter->second->get_user_cbk();
 
+
+	     bool recv_found = recv_update_buff->GetNodeRange(my_id, 
+					     &(recv_my_update_range.st_),
+       					     &(recv_my_update_range.end_));
 	     if(recv_found){
 	       boost::unordered_map<int32_t, 
-				    std::queue<UpdateBuffer*> >::my_updates_iter
-		 = my_updates.find(table_id);
+				    std::queue<UpdateBuffer*> >::iterator
+		 my_updates_iter = my_updates.find(table_id);
 	       
 	       CHECK(my_updates_iter != my_updates.end()) 
 		 << "Cannot find my updates to cancel duplicated updates";
-	       int64_t seq_num = recv_my_udpate_range.st_;
+	       int64_t seq_num = recv_my_update_range.st_;
 	       std::queue<UpdateBuffer*> &my_updates_queue = my_updates[table_id];
 	       
 	       do{
 		 
 		 UpdateBuffer *my_update_buff = my_updates_queue.front();
 		 UpdateRange my_update_range;
-		 bool found = my_upate_buff->GetNodeRange(my_id, 
-							  &(my_update_range.st_)
+		 bool found = my_update_buff->GetNodeRange(my_id, 
+							   &(my_update_range.st_),
 							  &(my_update_range.end_));
 		 CHECK(found) 
 		   << "Cannot find my update range from my update buffer";
@@ -463,26 +461,29 @@ void *Receiver::ReceiverThrMain(void *_argu){
 		 }
 		 UpdateBuffer::DestroyUpdateBuffer(my_update_buff);
 	       }while(seq_num < recv_my_update_range.end_);
-	     }    
+	       recv_update_buff->DeleteNodeRange(my_id);
+	     }
 
 	     uint8_t *recv_cbk_update_buff_mem;
 	     UpdateBuffer *recv_cbk_update_buff;
  
-	     if(user_cbk){
+	     if(do_user_cbk){
 	       recv_cbk_update_buff_mem = new uint8_t[len];
-	       memcpy(recv_cbk_update_buff_mem_cbk, recv_update_buff_mem, len);
+	       memcpy(recv_cbk_update_buff_mem, recv_update_buff_mem, len);
 	     
 	       recv_cbk_update_buff 
 		 = reinterpret_cast<UpdateBuffer*>(recv_cbk_update_buff_mem);
 	     }
 
-	     PUpdateBufferMsg update_buff_msg;
-	     update_buff_msg.msgtype_ = EPUpdateBuffer;
-	     update_buff_msg.update_buffer_ptr_ = recv_update_buff;
+	     PUpdateBufferMsg internal_update_buff_msg;
+	     internal_update_buff_msg.msgtype_ = EPUpdateBuffer;
+	     internal_update_buff_msg.table_id_ = table_id;
+	     internal_update_buff_msg.update_buffer_ptr_ = recv_update_buff;
 	     
-	     SendMsg(*internal_update_push_sock, (uint8_t*) &update_buff_msg, 
+	     SendMsg(*internal_update_push_sock, 
+		     (uint8_t*) &internal_update_buff_msg, 
 		     sizeof(PUpdateBufferMsg), 0);
-	     if(user_cbk){
+	     if(do_user_cbk){
 	       ucbk(table_id, recv_cbk_update_buff);
 	       delete[] recv_cbk_update_buff_mem;
 	     }
@@ -490,7 +491,17 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	 break;
 	 case EPRTerminateACK:
 	   {
-	     
+	     PRTerminateAckMsg *msg_ptr 
+	       = reinterpret_cast<PRTerminateAckMsg*>(data.get());
+	     int32_t node_id = msg_ptr->node_id_;
+	     peer_prop_info[node_id].has_replied_termination_ = true;
+	     if(HasAllPeersAckedTerm(peer_prop_info) 
+		&& have_replied_prop_pair_term){
+	       receiver_ptr->state_ = TERM;
+	       delete[] pollitems;
+	       VLOG(0) << "Receiver exiting from EPRInternalTerminate!";
+	       return NULL;
+	     }
 	   }
 	   break;
 	 }

@@ -175,13 +175,13 @@ int Propagator::AddUpdate(int64_t _key, uint8_t *_update_delta, int32_t _vsize,
 			  ValueAddFunc _table_vadd,
 			  boost::unordered_map<int64_t, uint8_t*> &_table_updates){
     boost::unordered_map<int64_t, uint8_t*>::iterator update_itr 
-    = _table_updates.find(key);
+    = _table_updates.find(_key);
 	    
   if(update_itr == _table_updates.end()){
-    _table_updates[key] = new uint8_t[_vsize];
-    memset(_table_updates[key], 0, _vsize);
+    _table_updates[_key] = new uint8_t[_vsize];
+    memset(_table_updates[_key], 0, _vsize);
   }
-  _table_vadd(_table_updates[key], _update_delta, _visze);
+  _table_vadd(_table_updates[_key], _update_delta, _vsize);
 
   return 0;
 }
@@ -205,8 +205,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
   boost::unordered_map<int32_t, boost::unordered_map<int64_t, uint8_t* > >
     my_update_store;
 
+  // termination condition
   bool have_received_ds_term = false; // received termination message from 
                                      // downstream receiver
+  bool have_replied_ds_term = false;
   bool have_stopped_timer_thr = false;
   bool have_stopped_recv_thr = false; // received ack from recv thread
 
@@ -360,7 +362,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
   
   int num_poll_sock = 1;
   int timer_pull_sock_idx = -1;
-  int tcp_update_pull_sock_idx = -1;
+  int tcp_term_sub_sock_idx = -1;
   
   NanoTimer timer;
   if(thrinfo->nanosec_ > 0){
@@ -380,7 +382,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 
   if(thrinfo->downstream_recv_.node_id_ >= 0){
     ++num_poll_sock;
-    tcp_update_pull_sock_idx = num_poll_sock - 1;  
+    tcp_term_sub_sock_idx = num_poll_sock - 1;  
   }
   
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
@@ -393,8 +395,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
   }  
   
   if(thrinfo->downstream_recv_.node_id_ >= 0){
-    pollitems[tcp_update_pull_sock_idx].socket = *term_sub_sock;
-    pollitems[tcp_update_pull_sock_idx].events = ZMQ_POLLIN;
+    pollitems[tcp_term_sub_sock_idx].socket = *term_sub_sock;
+    pollitems[tcp_term_sub_sock_idx].events = ZMQ_POLLIN;
   }
 
   VLOG(0) << "Starts looping!";
@@ -592,7 +594,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  // TODO: check if have stopped internal receiver and
 	  // acknolwedged downstream receiver
 	  
-	  if(have_stopped_recv_thr){
+	  if(have_stopped_recv_thr && have_stopped_timer_thr
+	     && have_replied_ds_term){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
 	    VLOG(0) << "************Propagator exiting!";
@@ -675,7 +678,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  PUpdateBufferMsg *update_buffer_msg 
 	    = reinterpret_cast<PUpdateBufferMsg*>(data.get());
 	  
-	  UpdateBuffer *update_buffer_ptr 
+	  UpdateBuffer *update_buff_ptr 
 	    = update_buffer_msg->update_buffer_ptr_;
 	  int32_t table_id = update_buffer_msg->table_id_;
 
@@ -695,26 +698,32 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    delta = update_buff_ptr->NextUpdate(&key);
 	    while(delta != NULL){
 	      AddUpdate(key, delta, update_size, table_vadd, 
-			updates_store[table_id]);
+			update_store[table_id]);
 	      delta = update_buff_ptr->NextUpdate(&key);
 	    }
 	    
-	    boost::<int32_t, boost::<int32_t, UpdateRange> >::iterator
+	    boost::unordered_map<int32_t, 
+				 boost::unordered_map<int32_t, 
+						      UpdateRange> >::iterator
 	      table_update_iter = table_peers_update_range.find(table_id);
 	    
-	    update_buffer_ptr->StartNodeRageIteration();
+	    update_buff_ptr->StartNodeRangeIteration();
 	    int32_t node_id;
 	    UpdateRange update_range;
-	    node_id = update_buffer_ptr->NextNodeRange(&(update_range.st_),
+	    node_id = update_buff_ptr->NextNodeRange(&(update_range.st_),
 						       &(update_range.end_));
 	    while(node_id >= 0){
-
+	      boost::unordered_map<int32_t, UpdateRange>::iterator update_iter 
+		= table_update_iter->second.find(node_id);
+	      if(update_iter == table_update_iter->second.end()){
+		(table_update_iter->second)[node_id] = update_range;
+	      }else{
+		CHECK_EQ((update_iter->second.end_ + 1), update_range.st_);
+		update_iter->second.end_ = update_range.end_;
+	      }
 	    }
-	    
-	  }else{
-
 	  }
-	  // TODO: delete update_buffer_ptr
+	  UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
 	}
 	break;
       case EPInternalTerminate:
@@ -734,8 +743,15 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  // 3) receiving termination message from ds receiver
 	  propagator_ptr->state_ = TERM_PREP;
 	  if(have_received_ds_term){
-	    // TODO: reply downstream receiver with termination ACK
+	    PRTerminateAckMsg term_ack_msg;
+	    term_ack_msg.msgtype_ = EPRTerminateACK;
+	    term_ack_msg.node_id_ = my_id;
+	    int ret = SendMsg(*prop_push_sock, (uint8_t*) &term_ack_msg, 
+			      sizeof(PRTerminateAckMsg), 0);
+	    CHECK_EQ(ret, sizeof(PRTerminateAckMsg));
+	    have_replied_ds_term = true;
 	  }
+
 	  if(internal_prop_recv_pair_push_sock.get() == NULL){
 	    try{
 	      internal_prop_recv_pair_push_sock.reset(
@@ -783,7 +799,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	{
 	  VLOG(0) << "Received EPRecvInternalTerminateACK";
 	  have_stopped_recv_thr = true;
-	  if(have_stopped_timer_thr){
+	  if(have_stopped_timer_thr && have_stopped_recv_thr
+	     && have_replied_ds_term){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
 	    VLOG(0) << "************Propagator exiting!";
@@ -797,7 +814,48 @@ void *Propagator::PropagatorThrMain(void *_argu){
       }
       continue;
     }
-    // TODO: check on receiver pull socket
+    if(thrinfo->downstream_recv_.node_id_ >= 0){
+      if(pollitems[tcp_term_sub_sock_idx].revents){
+	boost::shared_array<uint8_t> data;
+	int len;
+	PropRecvMsgType msgtype;
+	len = RecvMsg(*term_sub_sock, data);
+	if(len <= 0){
+	  LOG(FATAL) << "propagator thread read message type failed, "
+		     << "error \nPROCESS EXIT!";
+	}
+	msgtype = *(reinterpret_cast<PropRecvMsgType*>(data.get()));
+	switch(msgtype){
+	case EPRTerminate:
+	  {
+	    if(propagator_ptr->state_ == TERM_PREP){
+	    
+	      PRTerminateAckMsg term_ack_msg;
+	      term_ack_msg.msgtype_ = EPRTerminateACK;
+	      term_ack_msg.node_id_ = my_id;
+	      int ret = SendMsg(*prop_push_sock, (uint8_t*) &term_ack_msg, 
+				sizeof(PRTerminateAckMsg), 0);
+	      CHECK_EQ(ret, sizeof(PRTerminateAckMsg));
+	      have_received_ds_term = true;
+	      have_replied_ds_term = true;
+	      if(have_stopped_timer_thr && have_stopped_recv_thr 
+		 && have_replied_ds_term){
+		propagator_ptr->state_ = TERM;
+		delete[] pollitems;
+		VLOG(0) << "************Propagator exiting!";
+		return 0;
+	      }
+	    }else{
+	      have_received_ds_term = true;
+	    }
+
+	  }
+	  break;
+	default:
+	  LOG(FATAL) << "Received message unrecognized! type = " << msgtype;
+	}	
+      }
+    }
   }
   LOG(FATAL) << "incorrect exit path!";
   return 0;

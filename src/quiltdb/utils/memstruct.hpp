@@ -45,7 +45,7 @@ public:
   int DeleteNodeRange(int32_t _node_id);
   bool GetNodeRange(int32_t _node_id, int64_t *_key_st, int64_t *_key_end);
   
-  int StartNodeRangIteration();
+  int StartNodeRangeIteration();
   int32_t NextNodeRange(int64_t *_key_st, int64_t *_key_end);
 
   int32_t get_update_size();
