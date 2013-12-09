@@ -199,7 +199,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
   boost::scoped_ptr<zmq::socket_t> prop_push_sock;
   // PULL sock to receive messages (basically, termination message) from
   // receiver
-  boost::scoped_ptr<zmq::socket_t> term_pull_sock;
+  boost::scoped_ptr<zmq::socket_t> term_sub_sock;
 
   // inproc sockets
   boost::scoped_ptr<zmq::socket_t> update_pull_sock;
@@ -253,13 +253,29 @@ void *Propagator::PropagatorThrMain(void *_argu){
 
   try{    
     // TCP sockets
-    //prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
-    //term_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+
+    /*
+    prop_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+    std::string tcp_prop_push_endp = "tcp://" 
+      + thrinfo->downstream_recv_.recv_pull_ip_ + ":"
+      + thrinfo->downstream_recv_.recv_pull_port_;
+    prop_push_sock->connect(tcp_prop_push_endp.c_str());
+
+    term_sub_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_SUB));
+    std::string tcp_term_sub_endp = "tcp://" 
+      + thrinfo->downstream_recv_.recv_push_ip_ + ":"
+      + thrinfo->downstream_recv_.recv_push_port_;
+    term_sub_sock->connect(tcp_term_sub_endp.c_str());
+    int32_t gid = 1;
+    term_sub_sock->setsockopt(ZMQ_SUBSCRIBE, &gid, sizeof(int32_t));
+    */
 
     // inproc sockets
     update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
     update_pull_sock->bind(propagator_ptr->update_pull_endp_.c_str());    
-    
+    VLOG(0) << "update_pull_sock binds to "
+	    << propagator_ptr->update_pull_endp_;
+
     internal_prop_recv_pair_pull_sock.reset(new zmq::socket_t(*zmq_ctx, 
 							      ZMQ_PULL));
     internal_prop_recv_pair_pull_sock->bind(
@@ -273,17 +289,54 @@ void *Propagator::PropagatorThrMain(void *_argu){
   }
   
   sem_post(thrinfo->internal_sync_sem_);
-  //TODO: wait for message from internal receiver for connection
   
   boost::shared_array<uint8_t> data;
+  // Handshake between propagator and internal receiver
   int ret = RecvMsg(*internal_prop_recv_pair_pull_sock, data);
-
   CHECK_EQ(ret, sizeof(PropagatorMsgType));
+
   PropagatorMsgType *msg = reinterpret_cast<PropagatorMsgType*>(data.get());
   CHECK_EQ(*msg, EPRInit) << "received unrecognized message " << *msg;
 
-  // TODO: wait for connection messages from receiver
+  // Handshake between propagator and external receiver
 
+  /*
+  // Step 1: Propagator -> Receiver: PropInit
+  PropInitMsg initmsg;
+  initmsg.msgtype_ = PropInit;
+  initmsg.node_id_ = my_id;
+  
+  ret = SendMsg(*prop_push_sock, (uint8_t *) &initmsg, sizeof(PropInitMsg), 0);
+  CHECK_EQ(ret, sizeof(PropInitMsg)) << "Send InitMsg failed";
+  
+  // Step 2: Receiver -> Propagator: PropInitACK
+  ret = RecvMsg(*term_sub_sock, data);
+  CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive InitAckMsg failed";
+  PropRecvMsgType *ackmsg = reinterpret_cast<PropRecvMsgType*>(data.get());
+  CHECK(*ackmsg == PropInitACK) << "Received message unexpected " << *ackmsg;
+
+  // Step 3: Propagator -> Receiver: PropInitACKACK
+  PropInitAckAckMsg initackack_msg;
+  initackack_msg.msgtype_ = PropInitACKACK;
+  initackack_msg.node_id_ = my_id;
+  
+  ret = SendMsg(*prop_push_sock, (uint8_t *) &initackack_msg, 
+		sizeof(PropInitAckAckMsg), 0);
+  CHECK_EQ(ret, sizeof(PropInitAckAckMsg)) << "Send InitAckAckMsg failed";
+  VLOG(0) << "Sent out initackack_msg";
+
+  // Step 4: Receiver -> Propagator: PropStart
+  while(1){
+    ret = RecvMsg(*term_sub_sock, data);
+    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive PropStart failed";
+    
+    PropRecvMsgType *prop_start_msg 
+      = reinterpret_cast<PropRecvMsgType*>(data.get());
+    if(*prop_start_msg == PropStart){
+      break;
+    }
+  }
+  */
   // Send message to prop_push_sock
   // Wait 1 message from term_pull_sock
 
@@ -292,7 +345,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
   propagator_ptr->state_ = RUN;
   sem_post(thrinfo->sync_sem_);
   
-  int num_poll_sock = 1; //TODO: add 1 when recv_pull_sock is set up
+  int num_poll_sock = 1;
   NanoTimer timer;
   if(thrinfo->nanosec_ > 0){
     try{
@@ -311,17 +364,21 @@ void *Propagator::PropagatorThrMain(void *_argu){
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
   pollitems[0].socket = *update_pull_sock;
   pollitems[0].events = ZMQ_POLLIN;
+  //pollitems[0].socket = *term_pull_sock;
+  //pollitems[0].events = ZMQ_POLLIN;
 
   if(thrinfo->nanosec_ > 0){
     pollitems[1].socket = *timer_pull_sock;
     pollitems[1].events = ZMQ_POLLIN;
   }
-
+  
+  VLOG(0) << "Starts looping!";
   while(true){
     try {
       int num_poll;
+      //VLOG(1) << "Starts waiting for pull";
       num_poll = zmq::poll(pollitems, num_poll_sock);
-      VLOG(3) << "poll get " << num_poll << " messages";
+      //VLOG(1) << "poll get " << num_poll << " messages";
     } catch (zmq::error_t &e) {
       LOG(FATAL) << "propagator thread pull failed, error = " << e.what() 
 		 << "\nPROCESS EXIT";
@@ -359,7 +416,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	CHECK_EQ(ret, sizeof(TimerCmdMsg)) 
 	  << "SendMsg to timer_send_sock failed";
 	
-	VLOG(2) << "set up update buffer to send out";
+	//VLOG(2) << "set up update buffer to send out";
 	boost::unordered_map<int32_t, 
 			     boost::unordered_map<int64_t, uint8_t* > >::iterator
 	  table_iter;
@@ -372,7 +429,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  // to be added to the buffer, as the table may contain range of 0
 	  int32_t num_peers = table_peers_update_range[table_id].size();
 	  int32_t update_size = (propagator_ptr->table_dir_)[table_id].update_size_;
-	  VLOG(2) << "update_size = " << update_size;
+	  //VLOG(2) << "update_size = " << update_size;
 	  UpdateBuffer *update_buff = 
 	    UpdateBuffer::CreateUpdateBuffer(update_size, num_updates, 
 					     num_peers + 1);
@@ -383,7 +440,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      update_iter++){
 	    int ret = update_buff->AppendUpdate(update_iter->first, 
 						update_iter->second);
-	    VLOG(2) << "appended update to buffer, key " << update_iter->first;
+	    //VLOG(2) << "appended update to buffer, key " << update_iter->first;
 	    CHECK(ret == 0) << "Append to update buffer failed";
 	    delete[] update_iter->second;
 	    table_iter->second.erase(update_iter);
@@ -408,7 +465,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  }
 
 	  //TODO: this is only for debugging, remove it
-	  if(update_buff->StartIteration() == 0){
+	  /* if(update_buff->StartIteration() == 0){
 	    int64_t key;
 	    const uint8_t *update = update_buff->NextUpdate(&key);
 	    while(update != NULL){
@@ -417,7 +474,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		      << *(reinterpret_cast<const int32_t*>(update));
 	      update = update_buff->NextUpdate(&key);
 	    }
-	  }
+	    } */
 	  
 	  if(propagator_ptr->table_dir_[table_id].loop_){
 	    if(my_update_store[table_id].size() > 0){
@@ -500,6 +557,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  if(have_stopped_recv_thr){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
+	    VLOG(0) << "************Propagator exiting!";
 	    return 0;
 	  }
 
@@ -522,7 +580,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
       switch(msgtype){
       case EPUpdateLog:
 	{
-
+	  VLOG(0) << "Received EPUpdateLog";
 	  CHECK_EQ(len, sizeof(PUpdateLogMsg)) << "Malformed UpdateLog message";
 	  
 	  PUpdateLogMsg *updatelog 
@@ -535,10 +593,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  
 	  CHECK(len > 0) << "Malformed UpdateLog message";
 	  
-	  VLOG(1) << "received update log"
-		  << " table " << tid
-		  << " key " << key
-		  << " len of update " << len;
+	  //VLOG(1) << "received update log"
+	  //  << " table " << tid
+	  //	  << " key " << key
+	  //	  << " len of update " << len;
 	  
 	  if(propagator_ptr->state_ != RUN){
 	    break;
@@ -567,8 +625,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    }
 	    table_vadd(update_store[tid][key], update_delta, len);
 	    
-	    VLOG(0) << "propagator_ptr->table_dir_[tid].loop_ = "
-		    << propagator_ptr->table_dir_[tid].loop_;
+	    //VLOG(0) << "propagator_ptr->table_dir_[tid].loop_ = "
+	    //    << propagator_ptr->table_dir_[tid].loop_;
 	    if(propagator_ptr->table_dir_[tid].loop_){
 	      boost::unordered_map<int64_t, uint8_t*>::iterator my_update_itr
 		= my_update_store[tid].find(key);
@@ -577,14 +635,15 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		memset(my_update_store[tid][key], 0, len);
 	      }
 	      table_vadd(my_update_store[tid][key], update_delta, len);
-	      VLOG(0) << "append update " << key
-		      << " to my own update";
+	      //VLOG(0) << "append update " << key
+	      //      << " to my own update";
 	    }
 	  }
 	}
 	break;
       case EPUpdateBuffer:
 	{
+	  VLOG(0) << "received EPUpdateBuffer message";
 	  PUpdateBufferMsg *update_buffer_msg 
 	    = reinterpret_cast<PUpdateBufferMsg*>(data.get());
 	  
@@ -599,7 +658,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	break;
       case EPInternalTerminate:
 	{
-	  VLOG(0) << "received termination message";
+	  VLOG(0) << "received EPInternalTerminate message";
 	  // TODO: change state to TERM_PREP
 	  // If have received termination message from downstream receiver, send
 	  // downstream receiver a termination acknowledgement.
@@ -648,10 +707,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    boost::unordered_map<int64_t, uint8_t*>::iterator update_iter;
 	    for(update_iter = table_iter->second.begin(); 
 		update_iter != table_iter->second.end(); update_iter++){
-	      VLOG(1) << "clear update of "
-		      << " table " << table_iter->first
-		      << " key " << update_iter->first
-		      << " delta " << update_iter->second << std::endl;
+	      //VLOG(1) << "clear update of "
+	      //      << " table " << table_iter->first
+	      //      << " key " << update_iter->first
+	      //      << " delta " << update_iter->second << std::endl;
 	      delete[] update_iter->second;
 	      table_iter->second.erase(update_iter);
 	    }
@@ -661,14 +720,19 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	break;
       case EPRecvInternalTerminateACK:
 	{
+	  VLOG(0) << "Received EPRecvInternalTerminateACK";
 	  have_stopped_recv_thr = true;
 	  if(have_stopped_timer_thr){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
+	    VLOG(0) << "************Propagator exiting!";
 	    return 0;
 	  }
 	}
 	break;
+      default:
+	LOG(FATAL) << "Received unrecognized message!";
+	
       }
       continue;
     }

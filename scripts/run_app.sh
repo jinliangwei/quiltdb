@@ -24,7 +24,8 @@ for ip in $ip_list; do
 
     cmd="LD_LIBRARY_PATH=$third_party_dir:${LD_LIBRARY_PATH} \
     GLOG_logtostderr=true \
-    GLOG_v=2 \
+    GLOG_v=2, 
+    GLOG_vmodule=receiver=2,config_parser=-1,timer_thr=0 \
     GLOG_minloglevel=0 \
     $app_prog --config_file ${config_file} 
     --myhid ${id} --myvid ${id2}"
@@ -35,6 +36,6 @@ for ip in $ip_list; do
     echo "=============================="
     echo 
 
-    #ssh -oStrictHostKeyChecking=no $ip $cmd &
+    ssh -oStrictHostKeyChecking=no $ip $cmd &
     id=$(( id+2 ))
 done

@@ -38,9 +38,9 @@ int main(int argc, char *argv[]){
   quiltdb::ConfigParser config_parser;
   config_parser.LoadConfigFile(FLAGS_config_file);
 
-  // TODO: conifg vertical direction
   int32_t myhid = FLAGS_myhid;
-
+  int32_t myvid = FLAGS_myvid;
+  // Get H node configuration
   quiltdb::NodeConfig my_hconfig = config_parser.GetNodeInfo(myhid);
   CHECK_EQ(my_hconfig.node_info_.node_id_, myhid) 
     << "Failed to find id for myself id = " << myhid;
@@ -52,13 +52,28 @@ int main(int argc, char *argv[]){
   CHECK_EQ(h_downstream_config.node_info_.node_id_, h_downstream_id) 
     << "Failed to find id for h downstream config id = " << h_downstream_id;
 
-  //NodeConfig my_vconfig = config_parser.GetNodeInfo(myvid);  
+  // Get V node configuration
+  quiltdb::NodeConfig my_vconfig = config_parser.GetNodeInfo(myvid);
+  CHECK_EQ(my_vconfig.node_info_.node_id_, myvid) 
+    << "Failed to find id for myself id = " << myvid;
+
+  int32_t v_downstream_id = my_vconfig.downstream_recv_;
+  quiltdb::NodeConfig v_downstream_config 
+    = config_parser.GetNodeInfo(v_downstream_id);
+  
+  CHECK_EQ(v_downstream_config.node_info_.node_id_, v_downstream_id) 
+    << "Failed to find id for h downstream config id = " << v_downstream_id;
 
   quiltdb::DBConfig dbconfig;
   dbconfig.my_hid_ = myhid;
   dbconfig.my_hrecv_info_ = my_hconfig.node_info_;
   dbconfig.hnode_prop_downstream_ = h_downstream_config.node_info_;
   dbconfig.hexpected_prop_ = my_hconfig.num_expected_props_;
+
+  dbconfig.my_vid_ = myvid;
+  dbconfig.my_vrecv_info_ = my_vconfig.node_info_;
+  dbconfig.vnode_prop_downstream_ = v_downstream_config.node_info_;
+  dbconfig.vexpected_prop_ = my_vconfig.num_expected_props_;
 
   dbconfig.hbatch_nanosec_ = 500000;
   dbconfig.vbatch_nanosec_ = 500000; // 500 micro second

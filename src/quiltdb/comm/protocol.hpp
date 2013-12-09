@@ -32,7 +32,18 @@ struct PUpdateBufferMsg {
 };
 
 // messages to be received by propagator or receiver via TCP sock
-enum PropRecvMsgType{EPRUpdateBuffer, EPRTerminate, EPRTerminateAck};
+enum PropRecvMsgType{PropInit, PropInitACK, PropInitACKACK, PropStart,
+		     EPRUpdateBuffer, EPRTerminate, EPRTerminateAck};
+
+struct PropInitMsg{
+  PropRecvMsgType msgtype_;
+  int32_t node_id_;
+};
+
+struct PropInitAckAckMsg {
+  PropRecvMsgType msgtype_;
+  int32_t node_id_;
+};
 
 // messages to be received by receiver via inter-thread sock
 // ERInternalTerminate: application signals terminate to receiver

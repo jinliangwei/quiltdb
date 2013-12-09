@@ -123,21 +123,33 @@ void *Receiver::ReceiverThrMain(void *_argu){
   bool have_replied_prop_pair_term = false;
   
   try{
-    //update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
-    //term_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+
+    /*
+    update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
+    std::string tcp_update_pull_endp = "tcp://" 
+      + thrinfo->my_info_.recv_pull_ip_ + ":"
+      + thrinfo->my_info_.recv_pull_port_;
+    update_pull_sock->bind(tcp_update_pull_endp.c_str());
+
+    term_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+    std::string tcp_term_push_endp = "tcp://"
+      + thrinfo->my_info_.recv_push_ip_ + ":"
+      + thrinfo->my_info_.recv_push_port_;
+    term_push_sock->bind(tcp_term_push_endp.c_str());
+    */
 
     internal_recv_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
     internal_recv_pull_sock->bind(thrinfo->internal_recv_pull_endp_.c_str());
     VLOG(0) << "internal_recv_pull_sock binds to " 
 	    << thrinfo->internal_recv_pull_endp_;
-    
+
     internal_pair_recv_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
     internal_pair_recv_push_sock->connect(thrinfo->internal_pair_recv_push_endp_.c_str());
     
     VLOG(0) << "internal_pair_recv_push_sock connects to "
 	    << thrinfo->internal_pair_recv_push_endp_;
 
-    internal_update_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUSH));
+    internal_update_push_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PUB));
     internal_update_push_sock->connect(thrinfo->update_push_endp_.c_str());
     VLOG(0) << "internal_update_push_sock connects to "
 	    << thrinfo->update_push_endp_;
@@ -152,13 +164,73 @@ void *Receiver::ReceiverThrMain(void *_argu){
   // Recv from update_pull_sock, one message per propagator
   // Send message on term_push_sock one per propagator
 
-  VLOG(0) << "Successfully initialized sockets";
+  // Handshake with internal propagator
+  VLOG(2) << "Successfully initialized sockets";
   PropagatorMsgType init_msg = EPRInit;
   int ret = SendMsg(*internal_pair_recv_push_sock, (uint8_t *) &init_msg, 
 		    sizeof(PropagatorMsgType), 0);
   CHECK_EQ(ret, sizeof(PropagatorMsgType)) 
     << "Send on internal_prop_recv_pair_sock failed, ret = " << ret;
+
+  // Handshake iwth external propagator
   
+  // Step 1: Propagator -> Receiver: PropInit
+  /*
+  boost::shared_array<uint8_t> data;
+  int32_t num_props;
+  for(num_props = 0; num_props < thrinfo->num_expected_propagators_; 
+      ++num_props){
+    ret = RecvMsg(*update_pull_sock, data);
+    CHECK_EQ(ret, sizeof(PropInitMsg)) << "RecvMsg failed ret = " << ret ;
+    PropInitMsg *msg = reinterpret_cast<PropInitMsg*>(data.get());
+    VLOG(2) << "Received PropInitMsg from " << msg->node_id_;
+  }
+
+  // Step 2: Receiver -> Propagator: PropInitACK
+  int32_t gid = 1;
+  PropRecvMsgType initack_msg = PropInitACK;
+  num_props = 0;
+  while(num_props < thrinfo->num_expected_propagators_){
+    ret = SendMsg(*term_push_sock, gid, (uint8_t*) &initack_msg,
+		  sizeof(PropRecvMsgType), 0);
+    CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send InitAck failed, ret = "
+					   << ret;
+    sleep(1); // wait to allow the message to be propagated
+    
+    // Step 3: Propagator -> Receiver: PropInitACKACK
+    do{
+      ret = RecvMsgAsync(*update_pull_sock, data);
+      CHECK(ret >=0) << "RecvMsgAsync failed";
+      if(ret > 0){
+	
+	CHECK_EQ(ret, sizeof(PropInitAckAckMsg))
+	  << "Received malformed message";
+	
+	PropInitAckAckMsg *msg_ptr 
+	  = reinterpret_cast<PropInitAckAckMsg*>(data.get());
+	
+	CHECK_EQ(msg_ptr->msgtype_, PropInitACKACK) 
+	  << "Received malformed message"
+	  << " msgtype = " << msg_ptr->msgtype_
+	  << " expected = " << PropInitACKACK;
+	
+	VLOG(2) << "Received PropInitAckAckMsg from" 
+		<< msg_ptr->node_id_;
+	++num_props;
+      }
+    }while(ret > 0); 
+  }
+
+  // Step 4: Receiver -> Propagator: PropStart
+  PropRecvMsgType prop_start_msg = PropStart;
+  ret = SendMsg(*term_push_sock, gid, (uint8_t*) &prop_start_msg,
+		sizeof(PropRecvMsgType), 0);
+  CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Send PropStart failed, ret = " 
+					 << ret;
+  
+  // Handshake with external propagator done
+  */
+
   receiver_ptr->state_ = RUN;
   sem_post(thrinfo->sync_sem_);
   
@@ -193,7 +265,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
       switch(msgtype){
       case EMyUpdates:
 	{
-	  VLOG(0) << "Received EMyUpdates";
+	  VLOG(2) << "Received EMyUpdates";
 
 	  CHECK_EQ(len, sizeof(MyUpdatesMsg)) << "malformed MyUpdateMsg";
 	  
@@ -249,7 +321,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	  }
 	  
 	  if(have_received_prop_pair_term){
-	    VLOG(0) << "have_received_prop_pair_term = true";
+	    VLOG(2) << "have_received_prop_pair_term = true";
 	    PropagatorMsgType term_ack_msg = EPRecvInternalTerminateACK;
 	    int ret = SendMsg(*internal_update_push_sock, 
 			      (uint8_t*) &term_ack_msg,
@@ -258,6 +330,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    
 	    // TODO: remove this return after setting TCP sockets
 	    receiver_ptr->state_ = TERM;
+	    VLOG(0) << "Receiver exiting!";
 	    return 0;
 	  }
 	  /*
@@ -285,12 +358,16 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    int ret = SendMsg(*internal_update_push_sock, 
 			      (uint8_t*) &term_ack_msg,
 			      sizeof(PropagatorMsgType), 0);
+	    CHECK_EQ(ret, sizeof(PropagatorMsgType)) 
+	      << "Send EPRecvInternalTerminateACK failed";
 	    have_replied_prop_pair_term = true;
+	    VLOG(0) << "Send EPRecvInternalTerminateACK to propagator";
 	    /*if(HasAllPeersAckedTerm(peer_prop_info)){
 	      receiver_ptr->state_ = TERM;
 	      return NULL;
 	      }*/
 	    receiver_ptr->state_ = TERM;
+	    VLOG(0) << "Receiver exiting from EPRInternalTerminate!";
 	    return NULL;
 	  }else{
 	    LOG(FATAL) << "I should not be in this state " 
@@ -312,7 +389,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
       }*/
 
   }
-  
+  LOG(FATAL) << "Error!! Receiver exiting!";
   return 0;
 
 }

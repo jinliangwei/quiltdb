@@ -96,6 +96,7 @@ int QuiltDB::Start(){
   PropagatorConfig propagator_config;
   propagator_config.my_id_ = config_.my_hid_;
   propagator_config.nanosec_ = config_.hbatch_nanosec_;
+  propagator_config.downstream_recv_ = config_.hnode_prop_downstream_;
   propagator_config.zmq_ctx_ = zmq_ctx_;
   propagator_config.update_pull_endp_ = KHPROP_UPDATE_PULL_ENDP;
   propagator_config.internal_pair_p2r_endp_ = KHINTERNAL_PAIR_P2R_ENDP;
@@ -106,6 +107,7 @@ int QuiltDB::Start(){
 
   ReceiverConfig receiver_config;
   receiver_config.my_id_ = config_.my_hid_;
+  receiver_config.my_info_ = config_.my_hrecv_info_;
   receiver_config.num_expected_propagators_ = config_.hexpected_prop_;
   receiver_config.zmq_ctx_ = zmq_ctx_;
   receiver_config.update_push_endp_ = KHPROP_UPDATE_PULL_ENDP;
@@ -116,21 +118,24 @@ int QuiltDB::Start(){
   hreceiver_.Start(receiver_config, &sync_sem);
 
   propagator_config.my_id_ = config_.my_vid_;
+  propagator_config.downstream_recv_ = config_.vnode_prop_downstream_;
   propagator_config.update_pull_endp_ = KVPROP_UPDATE_PULL_ENDP;
   propagator_config.internal_pair_p2r_endp_ = KVINTERNAL_PAIR_P2R_ENDP;
   propagator_config.internal_pair_r2p_endp_ = KVINTERNAL_PAIR_R2P_ENDP;
-  vpropagator_.Start(propagator_config, &sync_sem);
+  //vpropagator_.Start(propagator_config, &sync_sem);
   VLOG(0) << "successfully called Start on vpropagator";
 
   receiver_config.my_id_ = config_.my_vid_;
+  receiver_config.my_info_ = config_.my_vrecv_info_;
+  receiver_config.num_expected_propagators_ = config_.hexpected_prop_;  
   receiver_config.update_push_endp_ = KVPROP_UPDATE_PULL_ENDP;
   receiver_config.internal_recv_pull_endp_ = KVINTERNAL_RECV_PULL_ENDP;
   receiver_config.internal_pair_recv_push_endp_ 
     = KVINTERNAL_PAIR_RECV_PUSH_ENDP;
-  vreceiver_.Start(receiver_config, &sync_sem);
+  //vreceiver_.Start(receiver_config, &sync_sem);
   
-  sem_wait(&sync_sem);
-  sem_wait(&sync_sem);
+  //sem_wait(&sync_sem);
+  //sem_wait(&sync_sem);
   sem_wait(&sync_sem);
   sem_wait(&sync_sem);
   
@@ -142,13 +147,13 @@ int QuiltDB::Start(){
 
 int QuiltDB::RegisterThr(){
   if(hpropagator_.RegisterThr() < 0) return -1;
-  if(vpropagator_.RegisterThr() < 0) return -1;
+  //if(vpropagator_.RegisterThr() < 0) return -1;
   return 0;
 }
 
 int QuiltDB::DeregisterThr(){
   if(hpropagator_.DeregisterThr() < 0) return -1;
-  if(vpropagator_.DeregisterThr() < 0) return -1;
+  //if(vpropagator_.DeregisterThr() < 0) return -1;
   return 0;
 }
 
@@ -158,21 +163,20 @@ int QuiltDB::ShutDown(){
   CHECK_EQ(ret, 0) << "hpropagator_.SignalTerm() failed";
   ret = hreceiver_.SignalTerm();
   CHECK_EQ(ret, 0) << "hreceiver_.SignalTerm() failed";
-  ret = vpropagator_.SignalTerm();
-  CHECK_EQ(ret, 0) << "vpropagator_.SignalTerm() failed";
-  ret = vreceiver_.SignalTerm();
-  CHECK_EQ(ret, 0) << "vreceiver_.SignalTerm() failed";
+  //ret = vpropagator_.SignalTerm();
+  //CHECK_EQ(ret, 0) << "vpropagator_.SignalTerm() failed";
+  //ret = vreceiver_.SignalTerm();
+  //CHECK_EQ(ret, 0) << "vreceiver_.SignalTerm() failed";
   
   ret = hpropagator_.WaitTerm();
   CHECK_EQ(ret, 0) << "hpropagator_.WaitTerm() failed";
   ret = hreceiver_.WaitTerm();
   CHECK_EQ(ret, 0) << "hreceiver_.WaitTerm() failed";
-  ret = vpropagator_.WaitTerm();
-  CHECK_EQ(ret, 0) << "vpropagator_.WaitTerm() failed";
-  ret = vreceiver_.WaitTerm();
-  CHECK_EQ(ret, 0) << "vreceiver_.WaitTerm() failed";
+  //ret = vpropagator_.WaitTerm();
+  //CHECK_EQ(ret, 0) << "vpropagator_.WaitTerm() failed";
+  //ret = vreceiver_.WaitTerm();
+  //CHECK_EQ(ret, 0) << "vreceiver_.WaitTerm() failed";
 
-  //vpropagator_.WaitTerm();
   return 0;
 }
 

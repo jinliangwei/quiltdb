@@ -33,8 +33,6 @@ int ConfigParser::LoadConfigFile(std::string _filename){
       node_config.node_info_.recv_push_port_ 
 	= yaml_node["recv-push-port"].as<std::string>();
       
-      VLOG(0) << "num-props :" << yaml_node["num-props"].as<std::string>();
-
       {
 	std::stringstream str_parser;
 	str_parser << yaml_node["num-props"].as<std::string>();
