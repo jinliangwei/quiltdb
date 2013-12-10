@@ -567,6 +567,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		my_update_buff->UpdateNodeRange(my_id, 
 					     my_update_range[table_id].st_, 
 					     my_update_range[table_id].end_);
+		VLOG(0) << "My buffer updated my node range "
+			<< "update size = " 
+			<< my_update_buff->get_update_size()
+			<< " node " << my_id;
 	      }else{
 		LOG(FATAL) << "I have updates, but my update range is empty!"
 			   << " st = " << my_update_range[table_id].st_ 

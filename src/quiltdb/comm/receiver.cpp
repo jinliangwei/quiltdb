@@ -290,13 +290,14 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    = reinterpret_cast<MyUpdatesMsg*>(data.get());
 	  int32_t table_id = myupdate_msg->table_id_;
 	  UpdateBuffer *update_buff_ptr = myupdate_msg->update_buffer_ptr_;
-	  
+	  VLOG(0) << "update size = " << update_buff_ptr->get_update_size()
+		  << " node " << my_id;
 	  if(receiver_ptr->state_ == RUN){
-	    boost::unordered_map<int32_t, std::queue<UpdateBuffer*> >::iterator
-	      table_update_iter = my_updates.find(table_id);
-	    if(table_update_iter == my_updates.end()){
-	      my_updates[table_id].push(update_buff_ptr);
-	    }
+	    //boost::unordered_map<int32_t, std::queue<UpdateBuffer*> >::iterator
+	    //table_update_iter = my_updates.find(table_id);
+	    //if(table_update_iter == my_updates.end()){
+	    my_updates[table_id].push(update_buff_ptr);
+	      //}
 	  }else{
 	    UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
 	  }
@@ -479,6 +480,8 @@ void *Receiver::ReceiverThrMain(void *_argu){
 		 seq_num = my_update_range.end_;
 		 
 		 my_updates_queue.pop();
+		 VLOG(0) << "my update buff update size = " 
+			 << my_update_buff->get_update_size();
 		 
 		 int ret = my_update_buff->StartIteration();
 		 CHECK_EQ(ret, 0) << "start iteration failed";

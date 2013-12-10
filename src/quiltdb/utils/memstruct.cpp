@@ -103,7 +103,8 @@ int UpdateBuffer::AppendUpdate(int64_t _key, const uint8_t *_update){
   uint8_t *update_end_ptr = reinterpret_cast<uint8_t*>(this) 
     + update_end_offset_;
 
-  VLOG(0) << "update_end_offset_ (before) = " << update_end_offset_;
+  VLOG(0) << "update_end_offset_ (before) = " << update_end_offset_
+	  << " update size = " << update_size_;
 
   int64_t *key_ptr = reinterpret_cast<int64_t*>(update_end_ptr);
   *key_ptr = _key;
@@ -127,7 +128,7 @@ uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   
   if(update_iter_offset_ >= update_end_offset_) return NULL;
 
-  VLOG(0) << "update_iter_offset_ (before) = " << update_iter_offset_;
+  //VLOG(0) << "update_iter_offset_ (before) = " << update_iter_offset_;
 
   uint8_t *update_iter_ptr = reinterpret_cast<uint8_t*>(this) 
     + update_iter_offset_;
@@ -137,8 +138,8 @@ uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   *key = *key_ptr;
 
   update_iter_offset_ += (sizeof(int64_t) + update_size_);
-  VLOG(0) << "update_size_ = " << update_size_;
-  VLOG(0) << "update_iter_offset_ (after) = " << update_iter_offset_;
+  //VLOG(0) << "update_size_ = " << update_size_;
+  //VLOG(0) << "update_iter_offset_ (after) = " << update_iter_offset_;
   
   return (update_iter_ptr + sizeof(int64_t));
 }
