@@ -254,7 +254,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 
       UpdateRange ur;
       ur.st_ = 0;
-      ur.end_ = 0;
+      ur.end_ = -1;
       my_update_range[table_iter->first] = ur;
       
       boost::unordered_map<int32_t, UpdateRange> empty_range;
@@ -467,7 +467,6 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  // to be added to the buffer, as the table may contain range of 0
 	  int32_t num_peers = table_peers_update_range[table_id].size();
 	  int32_t update_size = (propagator_ptr->table_dir_)[table_id].update_size_;
-	  //VLOG(2) << "update_size = " << update_size;
 	  UpdateBuffer *update_buff = 
 	    UpdateBuffer::CreateUpdateBuffer(update_size, num_updates, 
 					     num_peers + 1);
@@ -478,7 +477,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      update_iter++){
 	    int ret = update_buff->AppendUpdate(update_iter->first, 
 						update_iter->second);
-	    //VLOG(2) << "appended update to buffer, key " << update_iter->first;
+	    VLOG(0) << "appended update to buffer, key " << update_iter->first
+		    << " node " << my_id;
 	    CHECK(ret == 0) << "Append to update buffer failed";
 	    delete[] update_iter->second;
 	    table_iter->second.erase(update_iter);
@@ -540,6 +540,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      }
 
 	      int32_t num_my_updates = my_update_store[table_id].size();
+	      VLOG(0) << "Creating my update buffer update size = " 
+		      << update_size << " node " << my_id;
 	      UpdateBuffer *my_update_buff = 
 		UpdateBuffer::CreateUpdateBuffer(update_size, num_my_updates, 1);
 	      boost::unordered_map<int64_t, uint8_t*>::const_iterator
@@ -550,9 +552,15 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		int ret = my_update_buff->AppendUpdate(my_update_iter->first, 
 						       my_update_iter->second);
 		CHECK(ret == 0) << "Append to update buffer failed";
+		VLOG(0) << "Appended my update buffer with key " 
+			<< my_update_iter->first
+			<< " node " << my_id;
 		delete[] my_update_iter->second;
 	      }
 	      my_update_store[table_id].clear();
+	      VLOG(0) << "After clearing my_update_store[table_id], size = "
+		      << my_update_store[table_id].size()
+		      << " node " << my_id;
 
 	      if(my_update_range[table_id].st_ 
 		 <= my_update_range[table_id].end_){
@@ -668,7 +676,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    break;
 	  }
 
-	  my_update_range[tid].end_++;
+	  ++my_update_range[tid].end_;
 
 	  if(thrinfo->nanosec_ <= 0){
 	    // TODO: create an update buffer that contains only one update and 
