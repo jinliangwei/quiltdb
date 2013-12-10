@@ -73,7 +73,6 @@ private:
 
   DBConfig config_;
   bool started_;
-  int errcode_;
   boost::unordered_map<int32_t, InternalTable*> table_dir_;
   zmq::context_t *zmq_ctx_;
 };

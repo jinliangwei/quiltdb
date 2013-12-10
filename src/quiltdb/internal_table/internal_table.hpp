@@ -22,7 +22,8 @@ struct TableConfig{
 
   bool loop_;
   bool apply_updates_;
-  bool user_cbk_;
+  bool forward_updates_;
+  bool do_user_cbk_;
   UpdateBufferCbk update_buff_cbk_;
 };
 
@@ -38,6 +39,8 @@ public:
   // do vadd_func_(value, _delta);
   template<typename ValueType>
   void Inc(int64_t _key, ValueType _delta);
+
+  void IncRaw(int64_t _key, uint8_t *_delta);
 
   int32_t GetID();
   
@@ -55,10 +58,18 @@ public:
     return update_buff_cbk_;
   }
 
-  bool get_user_cbk(){
-    return user_cbk_;
+  bool get_do_user_cbk(){
+    return do_user_cbk_;
   }
 
+  bool get_forward_updates(){
+    return forward_updates_;
+  }
+
+  bool get_apply_updates(){
+    return apply_updates_;
+  }
+  
   void set_propagator(Propagator *_prop){
     propagator = _prop;
   }
@@ -81,7 +92,8 @@ private:
   // OpLog related configs
   bool loop_;
   bool apply_updates_;
-  bool user_cbk_; // call user defined callback function
+  bool forward_updates_;
+  bool do_user_cbk_; // call user defined callback function
   UpdateBufferCbk update_buff_cbk_;
 };
 
@@ -112,21 +124,8 @@ ValueType InternalTable::Get(int64_t _key){
 template<typename ValueType>
 void InternalTable::Inc(int64_t _key, ValueType _delta){
   
-  tbb::concurrent_hash_map<int64_t, uint8_t* >::accessor
-    value_acc;
-    
-  // if the key does not exist, insert it and initialize the value;
-  // if it exists, that takes no effect
-
-  if(storage_.insert(value_acc, _key)){
-    value_acc->second = new uint8_t[sizeof(ValueType)];
-    memset(value_acc->second, 0, sizeof(ValueType));
-  }
-  uint8_t *value_ptr = value_acc->second;
   uint8_t *delta_ptr = reinterpret_cast<uint8_t*>(&_delta);
-  
-  vadd_func_(value_ptr, delta_ptr, vsize_);
-
+  IncRaw(_key, delta_ptr);
   propagator->Inc(table_id_, _key, (uint8_t *) &_delta, sizeof(ValueType));
 }
 

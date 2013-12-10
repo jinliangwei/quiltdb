@@ -24,6 +24,7 @@ for ip in $ip_list; do
 
     cmd="LD_LIBRARY_PATH=$third_party_dir:${LD_LIBRARY_PATH} \
     GLOG_logtostderr=true \
+    GLOG_log_dir=${project_root}/log \
     GLOG_v=2, 
     GLOG_vmodule=receiver=2,config_parser=-1,timer_thr=0 \
     GLOG_minloglevel=0 \

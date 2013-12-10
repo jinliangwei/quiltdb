@@ -61,7 +61,10 @@ UpdateBuffer::UpdateBuffer(int32_t _buff_size,
   num_updates_occupied_(0),
   node_range_st_offset_(sizeof(UpdateBuffer)),
   num_nodes_(0){
-
+  
+  VLOG(0) << "Create UpdateBuffer, node_range_capacity = "
+	  << node_range_capacity_;
+  
   // initialize node range information
   uint8_t *node_range_ptr = reinterpret_cast<uint8_t*>(this) 
     + node_range_st_offset_;
@@ -145,7 +148,7 @@ uint8_t *UpdateBuffer::GetUpdate(int64_t _key){
     if(key == _key){
       return (update_ptr + sizeof(int64_t));
     }
-    key_ptr += (sizeof(int64_t) + update_size_);
+    update_ptr += (sizeof(int64_t) + update_size_);
   }
   return NULL;
 
@@ -169,13 +172,7 @@ int UpdateBuffer::UpdateNodeRange(int32_t _node_id, int64_t _key_st,
     int64_t *node_range_end_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
 							     + sizeof(int32_t)
 							     + sizeof(int64_t));
-    if(*node_id_ptr == -1){
-      *node_id_ptr = _node_id;
-      *node_range_st_ptr = _key_st;
-      *node_range_end_ptr = _key_end;
-      updated = true;
-      break;
-    }else if(*node_id_ptr == _node_id){
+    if(*node_id_ptr == _node_id){
       *node_range_st_ptr = _key_st;
       *node_range_end_ptr = _key_end;
       updated = true;
@@ -184,6 +181,31 @@ int UpdateBuffer::UpdateNodeRange(int32_t _node_id, int64_t _key_st,
 
     node_range_ptr += (sizeof(int32_t) + sizeof(int64_t) + sizeof(int64_t));
   }
+
+  if(updated) return 0;
+
+  node_range_ptr = reinterpret_cast<uint8_t*>(this) 
+    + node_range_st_offset_;
+
+  for(node_range_idx = 0; node_range_idx < node_range_capacity_; 
+      ++node_range_idx){
+        
+    int32_t *node_id_ptr = reinterpret_cast<int32_t*>(node_range_ptr);
+    int64_t *node_range_st_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
+							    + sizeof(int32_t));
+    int64_t *node_range_end_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
+							     + sizeof(int32_t)
+							     + sizeof(int64_t));
+    if(*node_id_ptr == -1){
+      *node_id_ptr = _node_id;
+      *node_range_st_ptr = _key_st;
+      *node_range_end_ptr = _key_end;
+      updated = true;
+      break;
+    }
+    node_range_ptr += (sizeof(int32_t) + sizeof(int64_t) + sizeof(int64_t));
+  }
+ 
   if(!updated) return -1;
   return 0;
 }
@@ -228,15 +250,16 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
   
   for(node_range_idx = 0; node_range_idx < node_range_capacity_; 
       ++node_range_idx){
-
+    VLOG(0) << "GetNodeRange, node_range_idx = " << node_range_idx;
     int32_t *node_id_ptr = reinterpret_cast<int32_t*>(node_range_ptr);
     int64_t *node_range_st_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
 							    + sizeof(int32_t));
     int64_t *node_range_end_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
 							     + sizeof(int32_t)
 							     + sizeof(int64_t));
-    if(*node_id_ptr < 0) break;
     if(*node_id_ptr == _node_id){
+      VLOG(0) << "Found node id = " << *node_id_ptr
+	      << " looking for _node_id = " << _node_id;
       *_key_st = *node_range_st_ptr;
       *_key_end = *node_range_end_ptr;
       found = true;

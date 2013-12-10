@@ -16,7 +16,6 @@ public:
   // Public functions in this class are all concurrent.
   template<typename ValueType>
   ValueType Get(int64_t _key){
-    std::cout << "here";
     return internal_table_->Get<ValueType>(_key);
   }
   

@@ -86,35 +86,51 @@ int main(int argc, char *argv[]){
   tconfig.vsub_func_ = IntSub;
   tconfig.loop_ = true;
   tconfig.apply_updates_ = true;
-  tconfig.user_cbk_ = false;
+  tconfig.forward_updates_ = true;
+  tconfig.do_user_cbk_ = false;
 
   quiltdb::Table htable = db.CreateHTable(0, tconfig);
   //quitdb::Table vtable = db.CreateVTable(1, tconfig);
 
-  db.Start();
-  int ret = db.RegisterThr();
-  assert(ret == 0);
+  int ret = db.Start();
+  CHECK_EQ(ret, 0) << "db Start() failed";
+
+  ret = db.RegisterThr();
+  CHECK_EQ(ret, 0) << "RegisterThr() failed";
+
 
   int a = htable.Get<int>(10);
 
   std::cout << "a = " << a << std::endl;
 
-  htable.Inc<int>(10, 2);
-  a = htable.Get<int>(10);
-  std::cout << "a = " << a << std::endl;
+  htable.Inc<int>(myhid, 1);
+  a = htable.Get<int>(myhid);
+  std::cout << "htable.Inc<int>(" << myhid 
+	    << ", 1)" 
+	    << " a = " << a << std::endl;
   htable.Inc<int>(8, 20);
   htable.Inc<int>(32, 12);
-
-
-  timespec req;
-  req.tv_sec = 0;
-  req.tv_nsec = 5000000;
-  timespec rem;
   
-  ret = nanosleep(&req, &rem);
+  int b;
+  std::cout << "start reading from " << h_downstream_id
+	    << " for termination condition" << std::endl;
+  int cnt = 0;
+  do{
+    timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 5000000;
+    timespec rem;
+    ret = nanosleep(&req, &rem);
+    
+    b = htable.Get<int>(h_downstream_id);
+    
+    ++cnt;
+  }while(b == 0 && cnt < 10);
 
-  db.ShutDown();
-  db.DeregisterThr();
+  std::cout << "b = " << b << std::endl;
+  ret = db.ShutDown();
+  ret = db.DeregisterThr();
   assert(ret == 0);
+  std::cout << "helloworld exiting..." << std::endl;
   return 0;
 }

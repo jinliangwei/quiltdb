@@ -2,6 +2,7 @@
 #include <sys/syscall.h>
 #include <sstream>
 #include <glog/logging.h>
+#include <iostream>
 
 #include "propagator.hpp"
 #include "protocol.hpp"
@@ -37,6 +38,7 @@ int Propagator::Start(PropagatorConfig &_config, sem_t *_sync_sem){
   thrinfo_.internal_pair_r2p_endp_ = _config.internal_pair_r2p_endp_;
   thrinfo_.internal_sync_sem_ = &internal_sync_sem;
 
+  VLOG(0) << "Creating pthread in Propagator::Start()";
   int ret = pthread_create(&thr_, NULL, PropagatorThrMain, &thrinfo_);
   CHECK_EQ(ret, 0) << "Create receiver thread failed";
 
@@ -253,6 +255,9 @@ void *Propagator::PropagatorThrMain(void *_argu){
       ur.st_ = 0;
       ur.end_ = 0;
       my_update_range[table_iter->first] = ur;
+      
+      boost::unordered_map<int32_t, UpdateRange> empty_range;
+      table_peers_update_range[table_iter->first] = empty_range;
     }
   }
 
@@ -326,11 +331,13 @@ void *Propagator::PropagatorThrMain(void *_argu){
     ret = SendMsg(*prop_push_sock, (uint8_t *) &initmsg, sizeof(PropInitMsg), 0);
     CHECK_EQ(ret, sizeof(PropInitMsg)) << "Send InitMsg failed";
     
+    int32_t cid;
     // Step 2: Receiver -> Propagator: PropInitACK
-    ret = RecvMsg(*term_sub_sock, data);
+    ret = RecvMsg(*term_sub_sock, cid, data);
     CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive InitAckMsg failed";
     PropRecvMsgType *ackmsg = reinterpret_cast<PropRecvMsgType*>(data.get());
-    CHECK(*ackmsg == PropInitACK) << "Received message unexpected " << *ackmsg;
+    CHECK(*ackmsg == PropInitACK) 
+      << "Received message unexpected " << *ackmsg;
     
   // Step 3: Propagator -> Receiver: PropInitACKACK
     PropInitAckAckMsg initackack_msg;
@@ -344,12 +351,13 @@ void *Propagator::PropagatorThrMain(void *_argu){
     
     // Step 4: Receiver -> Propagator: PropStart
     while(1){
-      ret = RecvMsg(*term_sub_sock, data);
+      ret = RecvMsg(*term_sub_sock, cid, data);
       CHECK_EQ(ret, sizeof(PropRecvMsgType)) << "Receive PropStart failed";
       
       PropRecvMsgType *prop_start_msg 
 	= reinterpret_cast<PropRecvMsgType*>(data.get());
       if(*prop_start_msg == PropStart){
+	VLOG(0) << "Received PropStart!";
 	break;
       }
     }
@@ -363,7 +371,9 @@ void *Propagator::PropagatorThrMain(void *_argu){
   int num_poll_sock = 1;
   int timer_pull_sock_idx = -1;
   int tcp_term_sub_sock_idx = -1;
-  
+
+  int32_t received_update_buffer_cnt = 0;
+
   NanoTimer timer;
   if(thrinfo->nanosec_ > 0){
     try{
@@ -480,15 +490,22 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    int64_t st = update_range_iter->second.st_;
 	    int64_t end = update_range_iter->second.end_;
 	    if(st <= end){
-	      update_buff->UpdateNodeRange(update_range_iter->first, 
+	      int ret = update_buff->UpdateNodeRange(update_range_iter->first, 
 					  st, end);
 	      update_range_iter->second.st_ = end + 1;
+	      CHECK_EQ(ret, 0);
 	    }
 	  }
 	  
 	  if(my_update_range[table_id].st_ <= my_update_range[table_id].end_){
-	    update_buff->UpdateNodeRange(my_id, my_update_range[table_id].st_, 
-					 my_update_range[table_id].end_);
+	    int ret = update_buff->UpdateNodeRange(my_id, 
+						   my_update_range[table_id].st_, 
+						   my_update_range[table_id].end_);
+	    VLOG(0) << "UpdateBuffer contains my updates, range added"
+		    << " st = " << my_update_range[table_id].st_
+	            << " end = " << my_update_range[table_id].end_;
+
+	    CHECK_EQ(ret, 0);
 	  }
 
 	  //TODO: this is only for debugging, remove it
@@ -533,8 +550,9 @@ void *Propagator::PropagatorThrMain(void *_argu){
 						       my_update_iter->second);
 		CHECK(ret == 0) << "Append to update buffer failed";
 		delete[] my_update_iter->second;
-		my_update_store[table_id].erase(my_update_iter);	      
 	      }
+	      my_update_store[table_id].clear();
+
 	      if(my_update_range[table_id].st_ 
 		 <= my_update_range[table_id].end_){
 		my_update_buff->UpdateNodeRange(my_id, 
@@ -582,6 +600,11 @@ void *Propagator::PropagatorThrMain(void *_argu){
 			update_buff->get_buff_size(), 0);
 	  CHECK_EQ(ret, update_buff->get_buff_size()) 
 	    << "Send EPRUpdateBuffer failed";
+	  
+	  VLOG(0) << "my id "
+		  << my_id
+		  << " sent out udpate buffer";
+
 	  UpdateBuffer::DestroyUpdateBuffer(update_buff);
 	  
 	}
@@ -674,7 +697,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	break;
       case EPUpdateBuffer:
 	{
-	  VLOG(0) << "received EPUpdateBuffer message";
+	  ++received_update_buffer_cnt;
+	  VLOG(0) << "node " << my_id
+		  << " received EPUpdateBuffer message, count = " 
+		  << received_update_buffer_cnt;
 	  PUpdateBufferMsg *update_buffer_msg 
 	    = reinterpret_cast<PUpdateBufferMsg*>(data.get());
 	  
@@ -697,6 +723,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    int64_t key;
 	    delta = update_buff_ptr->NextUpdate(&key);
 	    while(delta != NULL){
+	      VLOG(0) << "AddUpdate, key = " << key
+		      << " delta = " << *(reinterpret_cast<int*>(delta));
 	      AddUpdate(key, delta, update_size, table_vadd, 
 			update_store[table_id]);
 	      delta = update_buff_ptr->NextUpdate(&key);
@@ -718,9 +746,18 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      if(update_iter == table_update_iter->second.end()){
 		(table_update_iter->second)[node_id] = update_range;
 	      }else{
-		CHECK_EQ((update_iter->second.end_ + 1), update_range.st_);
+		CHECK_EQ((update_iter->second.end_ + 1), update_range.st_) 
+		  << "node " << node_id 
+		  << " updates are not contiguous"
+		  << " my id is " << my_id
+		  << " table_peers_update_range.size() = " 
+		  << table_peers_update_range.size()
+		  << " table_update_iter->second.size() = "
+		  << table_update_iter->second.size();
 		update_iter->second.end_ = update_range.end_;
 	      }
+	      node_id = update_buff_ptr->NextNodeRange(&(update_range.st_),
+						       &(update_range.end_));
 	    }
 	  }
 	  UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
@@ -816,15 +853,19 @@ void *Propagator::PropagatorThrMain(void *_argu){
     }
     if(thrinfo->downstream_recv_.node_id_ >= 0){
       if(pollitems[tcp_term_sub_sock_idx].revents){
+	
 	boost::shared_array<uint8_t> data;
 	int len;
 	PropRecvMsgType msgtype;
-	len = RecvMsg(*term_sub_sock, data);
+	int32_t cid;
+	len = RecvMsg(*term_sub_sock, cid, data);
 	if(len <= 0){
 	  LOG(FATAL) << "propagator thread read message type failed, "
 		     << "error \nPROCESS EXIT!";
 	}
+	VLOG(0) << "Received from term_sub_sock, len = " << len;
 	msgtype = *(reinterpret_cast<PropRecvMsgType*>(data.get()));
+	
 	switch(msgtype){
 	case EPRTerminate:
 	  {

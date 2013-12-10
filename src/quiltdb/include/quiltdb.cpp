@@ -30,7 +30,6 @@ const char *KVINTERNAL_PAIR_R2P_ENDP = KVINTERNAL_PAIR_RECV_PUSH_ENDP;
 QuiltDB::QuiltDB(DBConfig &_dbconfig):
   config_(_dbconfig),
   started_(false),
-  errcode_(0),
   zmq_ctx_(0){}
 
 QuiltDB::~QuiltDB(){
@@ -49,15 +48,13 @@ QuiltDB &QuiltDB::CreateQuiltDB(DBConfig &_dbconfig){
   try{
     db.zmq_ctx_ = new zmq::context_t(1);
   }catch(...){
-    VLOG(0) << "Create zmq_ctx failed";
-    db.errcode_ = 1;
+    LOG(FATAL) << "Create zmq_ctx failed";
   }
   return db;
 }
 
 Table QuiltDB::CreateHTable(int32_t _table_id, const TableConfig &_table_config){
   Table table;
-  if(errcode_) return table;
   
   int ret = CreateTable(_table_id, _table_config, &table);
   CHECK_EQ(ret, 0) << "CreateTable Failed";
@@ -74,7 +71,6 @@ Table QuiltDB::CreateHTable(int32_t _table_id, const TableConfig &_table_config)
 
 Table QuiltDB::CreateVTable(int32_t _table_id, const TableConfig &_table_config){
   Table table;
-  if(errcode_) return table;
 
   int ret = CreateTable(_table_id, _table_config, &table);
   
@@ -87,8 +83,8 @@ Table QuiltDB::CreateVTable(int32_t _table_id, const TableConfig &_table_config)
 }
 
 int QuiltDB::Start(){
-  if(errcode_) return -1;
- 
+  VLOG(0) << "QuiltDB::Start() called";
+
   sem_t sync_sem;
   sem_init(&sync_sem, 0, 0);
 
@@ -102,7 +98,9 @@ int QuiltDB::Start(){
   propagator_config.internal_pair_p2r_endp_ = KHINTERNAL_PAIR_P2R_ENDP;
   propagator_config.internal_pair_r2p_endp_ = KHINTERNAL_PAIR_R2P_ENDP;
 
-  hpropagator_.Start(propagator_config, &sync_sem);
+  VLOG(0) << "Calling propagator start";
+  int ret = hpropagator_.Start(propagator_config, &sync_sem);
+  CHECK_EQ(ret, 0) << "hpropagator Start() failed";
   VLOG(0) << "successfully called Start on hpropagator";
 
   ReceiverConfig receiver_config;
@@ -127,7 +125,7 @@ int QuiltDB::Start(){
 
   receiver_config.my_id_ = config_.my_vid_;
   receiver_config.my_info_ = config_.my_vrecv_info_;
-  receiver_config.num_expected_propagators_ = config_.hexpected_prop_;  
+  receiver_config.num_expected_propagators_ = config_.vexpected_prop_;  
   receiver_config.update_push_endp_ = KVPROP_UPDATE_PULL_ENDP;
   receiver_config.internal_recv_pull_endp_ = KVINTERNAL_RECV_PULL_ENDP;
   receiver_config.internal_pair_recv_push_endp_ 
