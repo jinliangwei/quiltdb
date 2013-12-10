@@ -477,6 +477,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 		   << "My update range is not contained";
 		 CHECK_EQ(my_update_range.st_, seq_num);
 		 seq_num = my_update_range.end_;
+		 
 		 my_updates_queue.pop();
 		 
 		 int ret = my_update_buff->StartIteration();
@@ -487,11 +488,13 @@ void *Receiver::ReceiverThrMain(void *_argu){
 		 my_delta = my_update_buff->NextUpdate(&key);
 		 
 		 while(my_delta != NULL){
+		   VLOG(0) << "remove duplicate for key " << key;
 		   recv_delta = recv_update_buff->GetUpdate(key);
 		   CHECK(recv_delta != NULL) 
-		     << "Cannot find update in received buffer"; 
+		     << "Cannot find update in received buffer key = " << key; 
 		   vsub_func(recv_delta, my_delta, 
 			     table_iter->second->get_vsize());
+		   my_delta = my_update_buff->NextUpdate(&key);
 		 }
 		 UpdateBuffer::DestroyUpdateBuffer(my_update_buff);
 	       }while(seq_num < recv_my_update_range.end_);
