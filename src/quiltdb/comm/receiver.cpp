@@ -256,7 +256,9 @@ void *Receiver::ReceiverThrMain(void *_argu){
     pollitems[1].socket = *update_pull_sock;
     pollitems[1].events = ZMQ_POLLIN;
   }
-
+  
+  VLOG(0) << "node " << my_id << " receiver starts";
+  
   while(true){
     try{
       int num_poll;
@@ -310,7 +312,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	break;
       case ERInternalTerminate:
 	{
-	  VLOG(0) << "Received ERInternalTerminate";
+	  VLOG(0) << "Received ERInternalTerminate node " << my_id;
 	  receiver_ptr->state_= TERM_SELF;
 	  // Once I'm signaled to terminate, I'm not going to process any 
 	  // received update buffers (not forwarding them to propagator or
@@ -324,12 +326,12 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	      update_buff_iter != my_updates.end();
 	      update_buff_iter++){
 	    UpdateBuffer *update_buff_ptr;
-	    VLOG(0) << "clearing up update buffer of table "
+	    VLOG(3) << "clearing up update buffer of table "
 		    << update_buff_iter->first;
 	    while(!(update_buff_iter->second).empty()){
-	      VLOG(0) << "Destroying buffer " << update_buff_ptr;
+	      VLOG(3) << "Destroying buffer " << update_buff_ptr;
 	      update_buff_ptr = update_buff_iter->second.front();
-	      VLOG(0) << "Fetched buff ptr " << update_buff_ptr;
+	      VLOG(3) << "Fetched buff ptr " << update_buff_ptr;
 	      UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
 	      update_buff_iter->second.pop();
 	    }
@@ -341,6 +343,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    int ret = SendMsg(*internal_update_push_sock, 
 			      (uint8_t*) &term_ack_msg,
 			      sizeof(PropagatorMsgType), 0);
+	    CHECK_EQ(ret, sizeof(PropagatorMsgType));
 	    have_replied_prop_pair_term = true;
 	    
 	    // TODO: remove this return after setting TCP sockets
@@ -348,19 +351,21 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    //VLOG(0) << "Receiver exiting!";
 	    //return 0;
 	  }
-	  
-	  PropRecvMsgType term_msg = EPRTerminate;
-	  int32_t gid = 1;
-	  int ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &term_msg, 
-			    sizeof(PropRecvMsgType), 0);
-	  CHECK_EQ(ret, sizeof(PropRecvMsgType));
+	  if(thrinfo->num_expected_propagators_ > 0){
+	    PropRecvMsgType term_msg = EPRTerminate;
+	    int32_t gid = 1;
+	    int ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &term_msg, 
+			      sizeof(PropRecvMsgType), 0);
+	    CHECK_EQ(ret, sizeof(PropRecvMsgType));
+	    VLOG(0) << "Sent EPRTerminate to propagators node " << my_id;
+	  }
 	}
 	break;
       case EPRInternalTerminate:
 	{
-	  VLOG(0) << "Received EPRInternalTerminate";
+	  VLOG(0) << "Received EPRInternalTerminate node " << my_id;
 	  if(receiver_ptr->state_ == RUN){
-	    VLOG(0) << "At running state, just turn on the flag";
+	    VLOG(0) << "At running state, just turn on the flag node" << my_id;
 	    have_received_prop_pair_term = true;
 	  }else if(receiver_ptr->state_ == TERM_SELF){
 	    PropagatorMsgType term_ack_msg = EPRecvInternalTerminateACK;
@@ -370,14 +375,16 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    CHECK_EQ(ret, sizeof(PropagatorMsgType)) 
 	      << "Send EPRecvInternalTerminateACK failed";
 	    have_replied_prop_pair_term = true;
-	    VLOG(0) << "Send EPRecvInternalTerminateACK to propagator";
+	    VLOG(0) << "Send EPRecvInternalTerminateACK to propagator"
+		    << " node " << my_id;
 	    if(HasAllPeersAckedTerm(peer_prop_info) 
 	       && have_replied_prop_pair_term){
 	      
 	      receiver_ptr->state_ = TERM;
 	      delete[] pollitems;
 	      VLOG(0) 
-		<< "**********Receiver exiting from EPRInternalTerminate!";
+		<< "**********Receiver exiting from EPRInternalTerminate! node " 
+		<< my_id;
 	      return NULL;
 	    }
 	  }else{
@@ -531,22 +538,29 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	       ucbk(table_id, recv_update_buff);
 	     }
 	   }
-	 break;
+	   break;
 	 case EPRTerminateACK:
 	   {
 	     PRTerminateAckMsg *msg_ptr 
 	       = reinterpret_cast<PRTerminateAckMsg*>(data.get());
 	     int32_t node_id = msg_ptr->node_id_;
 	     peer_prop_info[node_id].has_replied_termination_ = true;
+	     
+	     VLOG(0) << "Received EPRTerminateACK!"
+		     << " node " << my_id;
+
 	     if(HasAllPeersAckedTerm(peer_prop_info) 
 		&& have_replied_prop_pair_term){
 	       receiver_ptr->state_ = TERM;
 	       delete[] pollitems;
-	       VLOG(0) << "**********Receiver exiting from EPRTerminateACK!";
+	       VLOG(0) << "**********Receiver exiting from EPRTerminateACK!"
+		       << " node " << my_id;
 	       return NULL;
 	     }
 	   }
 	   break;
+	 default:
+	   LOG(FATAL) << "Unrecognized message type " << msgtype;
 	 }
 	 continue;
       }

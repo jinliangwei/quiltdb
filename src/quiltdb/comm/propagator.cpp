@@ -210,7 +210,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
   // termination condition
   bool have_received_ds_term = false; // received termination message from 
                                      // downstream receiver
-  bool have_replied_ds_term = false;
+  // bypass this check if I don't have receiver
+  bool have_replied_ds_term = (thrinfo->downstream_recv_.node_id_ < 0);
   bool have_stopped_timer_thr = false;
   bool have_stopped_recv_thr = false; // received ack from recv thread
 
@@ -409,7 +410,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
     pollitems[tcp_term_sub_sock_idx].events = ZMQ_POLLIN;
   }
 
-  VLOG(0) << "Starts looping!";
+  VLOG(0) << "node " << my_id << " propagator starts looping!";
   while(true){
     try {
       int num_poll;
@@ -621,7 +622,8 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	     && have_replied_ds_term){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
-	    VLOG(0) << "************Propagator exiting!";
+	    VLOG(0) << "************Propagator exiting! node "
+		    << my_id;
 	    return 0;
 	  }
 
@@ -765,7 +767,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	break;
       case EPInternalTerminate:
 	{
-	  VLOG(0) << "received EPInternalTerminate message";
+	  VLOG(0) << "received EPInternalTerminate message node " << my_id;
 	  // TODO: change state to TERM_PREP
 	  // If have received termination message from downstream receiver, send
 	  // downstream receiver a termination acknowledgement.
@@ -787,6 +789,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 			      sizeof(PRTerminateAckMsg), 0);
 	    CHECK_EQ(ret, sizeof(PRTerminateAckMsg));
 	    have_replied_ds_term = true;
+	    VLOG(0) << "replied EPRTerminateACK node " << my_id;
 	  }
 
 	  if(internal_prop_recv_pair_push_sock.get() == NULL){
@@ -813,10 +816,10 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  boost::unordered_map<int32_t, 
 	    boost::unordered_map<int64_t, uint8_t*> >::iterator
 	    table_iter;
-	  VLOG(0) << "starts clearing remaining updates";
+	  VLOG(3) << "starts clearing remaining updates";
 	  for(table_iter = update_store.begin(); table_iter != update_store.end();
 	      table_iter++){
-	    VLOG(1) << "clear update of "
+	    VLOG(3) << "clear update of "
 		    << " table " << table_iter->first;
 	    boost::unordered_map<int64_t, uint8_t*>::iterator update_iter;
 	    for(update_iter = table_iter->second.begin(); 
@@ -834,13 +837,14 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	break;
       case EPRecvInternalTerminateACK:
 	{
-	  VLOG(0) << "Received EPRecvInternalTerminateACK";
+	  VLOG(0) << "Received EPRecvInternalTerminateACK node " << my_id;
 	  have_stopped_recv_thr = true;
 	  if(have_stopped_timer_thr && have_stopped_recv_thr
 	     && have_replied_ds_term){
 	    propagator_ptr->state_ = TERM;
 	    delete[] pollitems;
-	    VLOG(0) << "************Propagator exiting!";
+	    VLOG(0) << "************Propagator exiting!"
+		    << " node " << my_id;
 	    return 0;
 	  }
 	}
@@ -863,27 +867,29 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	  LOG(FATAL) << "propagator thread read message type failed, "
 		     << "error \nPROCESS EXIT!";
 	}
-	VLOG(0) << "Received from term_sub_sock, len = " << len;
+	VLOG(3) << "Received from term_sub_sock, len = " << len;
 	msgtype = *(reinterpret_cast<PropRecvMsgType*>(data.get()));
 	
 	switch(msgtype){
 	case EPRTerminate:
 	  {
+	    VLOG(0) << "received EPRTerminate node " << my_id;
 	    if(propagator_ptr->state_ == TERM_PREP){
-	    
 	      PRTerminateAckMsg term_ack_msg;
 	      term_ack_msg.msgtype_ = EPRTerminateACK;
 	      term_ack_msg.node_id_ = my_id;
 	      int ret = SendMsg(*prop_push_sock, (uint8_t*) &term_ack_msg, 
 				sizeof(PRTerminateAckMsg), 0);
 	      CHECK_EQ(ret, sizeof(PRTerminateAckMsg));
+	      VLOG(0) << "replied EPRTerminateACK to receiver node " << my_id;
 	      have_received_ds_term = true;
 	      have_replied_ds_term = true;
 	      if(have_stopped_timer_thr && have_stopped_recv_thr 
 		 && have_replied_ds_term){
 		propagator_ptr->state_ = TERM;
 		delete[] pollitems;
-		VLOG(0) << "************Propagator exiting!";
+		VLOG(0) << "************Propagator exiting! node "
+			<< my_id;
 		return 0;
 	      }
 	    }else{
