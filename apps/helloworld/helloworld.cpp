@@ -131,6 +131,8 @@ int main(int argc, char *argv[]){
   ret = db.ShutDown();
   ret = db.DeregisterThr();
   assert(ret == 0);
-  std::cout << "helloworld exiting..." << std::endl;
+  std::cout << "node " << myhid
+	    << " " << myvid
+	    << " helloworld exiting..." << std::endl;
   return 0;
 }

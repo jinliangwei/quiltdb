@@ -126,7 +126,8 @@ int Propagator::WaitTerm(){
   if(state_ == INIT) return -1;
   if(!have_signaled_term_) return -1;
   
-  pthread_join(thr_, NULL);
+  int ret = pthread_join(thr_, NULL);
+  CHECK_EQ(ret, 0);
   return 0;
 }
 
@@ -509,18 +510,6 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	    CHECK_EQ(ret, 0);
 	  }
 
-	  //TODO: this is only for debugging, remove it
-	  /* if(update_buff->StartIteration() == 0){
-	    int64_t key;
-	    const uint8_t *update = update_buff->NextUpdate(&key);
-	    while(update != NULL){
-	      VLOG(2) << "update, key = " << key
-		      << " update = " 
-		      << *(reinterpret_cast<const int32_t*>(update));
-	      update = update_buff->NextUpdate(&key);
-	    }
-	    } */
-	  
 	  if(propagator_ptr->table_dir_[table_id].loop_){
 	    if(my_update_store[table_id].size() > 0){
 	      
@@ -540,7 +529,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      }
 
 	      int32_t num_my_updates = my_update_store[table_id].size();
-	      VLOG(0) << "Creating my update buffer update size = " 
+	      VLOG(3) << "Creating my update buffer update size = " 
 		      << update_size << " node " << my_id;
 	      UpdateBuffer *my_update_buff = 
 		UpdateBuffer::CreateUpdateBuffer(update_size, num_my_updates, 1);
@@ -558,7 +547,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		delete[] my_update_iter->second;
 	      }
 	      my_update_store[table_id].clear();
-	      VLOG(0) << "After clearing my_update_store[table_id], size = "
+	      VLOG(3) << "After clearing my_update_store[table_id], size = "
 		      << my_update_store[table_id].size()
 		      << " node " << my_id;
 
@@ -567,7 +556,7 @@ void *Propagator::PropagatorThrMain(void *_argu){
 		my_update_buff->UpdateNodeRange(my_id, 
 					     my_update_range[table_id].st_, 
 					     my_update_range[table_id].end_);
-		VLOG(0) << "My buffer updated my node range "
+		VLOG(3) << "My buffer updated my node range "
 			<< "update size = " 
 			<< my_update_buff->get_update_size()
 			<< " node " << my_id;
@@ -593,7 +582,6 @@ void *Propagator::PropagatorThrMain(void *_argu){
 	      PropagatorMsgType *my_update_ack_msg
 		= reinterpret_cast<PropagatorMsgType*>(data.get());
 	      CHECK_EQ(*my_update_ack_msg, EMyUpdatesACK);
-	      UpdateBuffer::DestroyUpdateBuffer(my_update_buff);
 	    }
 	  }
 	  

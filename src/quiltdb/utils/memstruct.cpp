@@ -62,7 +62,7 @@ UpdateBuffer::UpdateBuffer(int32_t _buff_size,
   node_range_st_offset_(sizeof(UpdateBuffer)),
   num_nodes_(0){
   
-  VLOG(0) << "Create UpdateBuffer, node_range_capacity = "
+  VLOG(3) << "Create UpdateBuffer, node_range_capacity = "
 	  << node_range_capacity_
 	  << " update szie = " << update_size_;
   
@@ -103,9 +103,6 @@ int UpdateBuffer::AppendUpdate(int64_t _key, const uint8_t *_update){
   uint8_t *update_end_ptr = reinterpret_cast<uint8_t*>(this) 
     + update_end_offset_;
 
-  VLOG(0) << "update_end_offset_ (before) = " << update_end_offset_
-	  << " update size = " << update_size_;
-
   int64_t *key_ptr = reinterpret_cast<int64_t*>(update_end_ptr);
   *key_ptr = _key;
   
@@ -128,8 +125,6 @@ uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   
   if(update_iter_offset_ >= update_end_offset_) return NULL;
 
-  //VLOG(0) << "update_iter_offset_ (before) = " << update_iter_offset_;
-
   uint8_t *update_iter_ptr = reinterpret_cast<uint8_t*>(this) 
     + update_iter_offset_;
   
@@ -138,9 +133,7 @@ uint8_t *UpdateBuffer::NextUpdate(int64_t *key){
   *key = *key_ptr;
 
   update_iter_offset_ += (sizeof(int64_t) + update_size_);
-  //VLOG(0) << "update_size_ = " << update_size_;
-  //VLOG(0) << "update_iter_offset_ (after) = " << update_iter_offset_;
-  
+
   return (update_iter_ptr + sizeof(int64_t));
 }
 
@@ -258,7 +251,6 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
   
   for(node_range_idx = 0; node_range_idx < node_range_capacity_; 
       ++node_range_idx){
-    VLOG(0) << "GetNodeRange, node_range_idx = " << node_range_idx;
     int32_t *node_id_ptr = reinterpret_cast<int32_t*>(node_range_ptr);
     int64_t *node_range_st_ptr = reinterpret_cast<int64_t*>(node_range_ptr 
 							    + sizeof(int32_t));
@@ -266,8 +258,6 @@ bool UpdateBuffer::GetNodeRange(int32_t _node_id, int64_t *_key_st,
 							     + sizeof(int32_t)
 							     + sizeof(int64_t));
     if(*node_id_ptr == _node_id){
-      VLOG(0) << "Found node id = " << *node_id_ptr
-	      << " looking for _node_id = " << _node_id;
       *_key_st = *node_range_st_ptr;
       *_key_end = *node_range_end_ptr;
       found = true;
@@ -318,6 +308,10 @@ int32_t UpdateBuffer::NextNodeRange(int64_t *_key_st, int64_t *_key_end){
 
 int32_t UpdateBuffer::get_update_size(){
   return  update_size_;
+}
+
+int32_t UpdateBuffer::get_update_capacity(){
+  return  update_capacity_;
 }
 
 int32_t UpdateBuffer::get_buff_size(){

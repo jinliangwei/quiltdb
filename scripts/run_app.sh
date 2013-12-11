@@ -26,7 +26,7 @@ for ip in $ip_list; do
     GLOG_logtostderr=true \
     GLOG_log_dir=${project_root}/log \
     GLOG_v=2, 
-    GLOG_vmodule=receiver=2,config_parser=-1,timer_thr=0 \
+    GLOG_vmodule=receiver=2,config_parser=-1,timer_thr=0,quiltdb=2,internal_table=2 \
     GLOG_minloglevel=0 \
     $app_prog --config_file ${config_file} 
     --myhid ${id} --myvid ${id2}"

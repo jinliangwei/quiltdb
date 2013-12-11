@@ -74,7 +74,8 @@ int Receiver::WaitTerm(){
   if(state_ == INIT) return -1;
   if(!have_signaled_term_) return -1;
  
-  pthread_join(recv_thr_, NULL);
+  int ret = pthread_join(recv_thr_, NULL);
+  CHECK_EQ(ret, 0);
   return 0;
 }
 
@@ -124,7 +125,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
   bool have_replied_prop_pair_term = false;
   
   try{
-    if(thrinfo->num_expected_propagators_ > 0){
+    if(num_expected_propagators > 0){
      
       update_pull_sock.reset(new zmq::socket_t(*zmq_ctx, ZMQ_PULL));
       std::string tcp_update_pull_endp = "tcp://" 
@@ -175,11 +176,11 @@ void *Receiver::ReceiverThrMain(void *_argu){
 
   // Handshake iwth external propagator
 
-  if(thrinfo->num_expected_propagators_ > 0){
+  if(num_expected_propagators > 0){
   // Step 1: Propagator -> Receiver: PropInit
     boost::shared_array<uint8_t> data;
     int32_t num_props;
-    for(num_props = 0; num_props < thrinfo->num_expected_propagators_; 
+    for(num_props = 0; num_props < num_expected_propagators; 
 	++num_props){
       ret = RecvMsg(*update_pull_sock, data);
       CHECK_EQ(ret, sizeof(PropInitMsg)) << "RecvMsg failed ret = " << ret ;
@@ -194,7 +195,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
     
     PropRecvMsgType initack_msg = PropInitACK;
     num_props = 0;
-    while(num_props < thrinfo->num_expected_propagators_){
+    while(num_props < num_expected_propagators){
       ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &initack_msg,
 		    sizeof(PropRecvMsgType), 0);
       VLOG(0) << "Send PropInitAck!";
@@ -225,7 +226,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	  VLOG(2) << "Received PropInitAckAckMsg from " 
 		  << msg_ptr->node_id_;
 	  ++num_props;
-	  if(num_props == thrinfo->num_expected_propagators_)
+	  if(num_props == num_expected_propagators)
 	    break;
 	}
       }while(ret > 0); 
@@ -245,14 +246,14 @@ void *Receiver::ReceiverThrMain(void *_argu){
   
   // TODO: adjust number when TCP sockets are set up
   int num_poll_sock = 1;
-  if(thrinfo->num_expected_propagators_ > 0){
+  if(num_expected_propagators > 0){
     ++num_poll_sock;
   }
   zmq::pollitem_t *pollitems = new zmq::pollitem_t[num_poll_sock];
   pollitems[0].socket = *internal_recv_pull_sock;
   pollitems[0].events = ZMQ_POLLIN;
   
-  if(thrinfo->num_expected_propagators_ > 0){
+  if(num_expected_propagators > 0){
     pollitems[1].socket = *update_pull_sock;
     pollitems[1].events = ZMQ_POLLIN;
   }
@@ -293,11 +294,7 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	  VLOG(0) << "update size = " << update_buff_ptr->get_update_size()
 		  << " node " << my_id;
 	  if(receiver_ptr->state_ == RUN){
-	    //boost::unordered_map<int32_t, std::queue<UpdateBuffer*> >::iterator
-	    //table_update_iter = my_updates.find(table_id);
-	    //if(table_update_iter == my_updates.end()){
 	    my_updates[table_id].push(update_buff_ptr);
-	      //}
 	  }else{
 	    UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
 	  }
@@ -332,12 +329,13 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    while(!(update_buff_iter->second).empty()){
 	      VLOG(3) << "Destroying buffer " << update_buff_ptr;
 	      update_buff_ptr = update_buff_iter->second.front();
-	      VLOG(3) << "Fetched buff ptr " << update_buff_ptr;
 	      UpdateBuffer::DestroyUpdateBuffer(update_buff_ptr);
 	      update_buff_iter->second.pop();
 	    }
 	  }
 	  
+	  VLOG(0) << "Cleared update buffers node " << my_id;
+
 	  if(have_received_prop_pair_term){
 	    VLOG(2) << "have_received_prop_pair_term = true";
 	    PropagatorMsgType term_ack_msg = EPRecvInternalTerminateACK;
@@ -347,12 +345,8 @@ void *Receiver::ReceiverThrMain(void *_argu){
 	    CHECK_EQ(ret, sizeof(PropagatorMsgType));
 	    have_replied_prop_pair_term = true;
 	    
-	    // TODO: remove this return after setting TCP sockets
-	    //receiver_ptr->state_ = TERM;
-	    //VLOG(0) << "Receiver exiting!";
-	    //return 0;
 	  }
-	  if(thrinfo->num_expected_propagators_ > 0){
+	  if(num_expected_propagators > 0){
 	    PropRecvMsgType term_msg = EPRTerminate;
 	    int32_t gid = 1;
 	    int ret = SendMsg(*term_pub_sock, gid, (uint8_t*) &term_msg, 
@@ -402,8 +396,10 @@ void *Receiver::ReceiverThrMain(void *_argu){
     }
     
    
-    if(thrinfo->num_expected_propagators_ > 0){
+    if(num_expected_propagators > 0){
       if(pollitems[1].revents){
+	VLOG(0) << "Reading from update_pull_sock, node "
+		<< my_id;
 	 boost::shared_array<uint8_t> data;
 	 int len;
 	 PropRecvMsgType msgtype;
@@ -480,8 +476,12 @@ void *Receiver::ReceiverThrMain(void *_argu){
 		 seq_num = my_update_range.end_;
 		 
 		 my_updates_queue.pop();
-		 VLOG(0) << "my update buff update size = " 
-			 << my_update_buff->get_update_size();
+		 VLOG(0) << " my update buff buffer size = " 
+			 << my_update_buff->get_buff_size()
+			 << " update size = " 
+			 << my_update_buff->get_update_size()
+			 << " update capacity = "
+			 << my_update_buff->get_update_capacity();
 		 
 		 int ret = my_update_buff->StartIteration();
 		 CHECK_EQ(ret, 0) << "start iteration failed";

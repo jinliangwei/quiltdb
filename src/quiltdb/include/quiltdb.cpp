@@ -33,14 +33,17 @@ QuiltDB::QuiltDB(DBConfig &_dbconfig):
   zmq_ctx_(0){}
 
 QuiltDB::~QuiltDB(){
-
   boost::unordered_map<int32_t, InternalTable*>::iterator table_itr;
   for(table_itr = table_dir_.begin(); table_itr != table_dir_.end(); 
       table_itr++){
     delete table_itr->second;
     table_itr->second = 0;
-  }    
-  if(zmq_ctx_ != 0) delete zmq_ctx_;
+  }
+
+  if(zmq_ctx_ != 0){
+    delete zmq_ctx_;
+    VLOG(0) << "zmq_ctx_ deleted";
+  }
 }
 
 QuiltDB &QuiltDB::CreateQuiltDB(DBConfig &_dbconfig){

@@ -17,7 +17,7 @@ InternalTable::~InternalTable(){
   tbb::concurrent_hash_map<int64_t, uint8_t*>::iterator del_acc;
   for(del_acc = storage_.begin(); del_acc != storage_.end(); del_acc++){
     delete[] del_acc->second;
-    storage_.erase(del_acc->first);
+    del_acc->second = 0;
   } 
 }
 
