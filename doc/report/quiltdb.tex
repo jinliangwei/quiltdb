@@ -1,0 +1,211 @@
+\documentclass{acm_proc_article-sp}
+\usepackage{wrapfig}
+\usepackage{tikz, alex, url, mu}
+\usetikzlibrary{arrows,shapes,snakes,automata,backgrounds,petri}
+\tikzset{>=stealth}
+
+\title{Quilting for Distributed Machine Learning System}
+
+\author{Mu Li \\ CMU CSD \and Jinliang Wei\\ CMU CSD}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+In this paper we proposal QuiltDB, a distributed database optimized for network
+topology.
+\end{abstract}
+
+\section{Introduction}
+
+In distributed machine learning applications, data as well as computation are
+partitioned among hundreds or  thousands of machines. Those
+worker machines thus share read and write access to a set of global parameters.
+A common approach for sharing parameters is to use parameter server, a key-value
+store that supports specially crafted consistency models for machine learning
+applicaitons. However, one fundamental problem faced by the parameter server
+approach is that the parameter server can be easily overloaded and become the
+bottel of the system, especially as the size of the problem and the number of
+machines scale up.
+
+Moreover, datacenters' networks usually forms a tree-like topology,
+where bandwidth of upper-tier links is usually much less than the aggregated
+bandwidth of lower-tier links. In common senario, worker nodes and parameter
+server nodes may be separated across multiple tiers and the upper-tier links can
+be easily congested without careful tuning of the system.
+
+\section{Network Topologies}
+
+\section{Machine Learning Applications}
+\section{Implementation}
+
+\section{Evaluation}
+
+
+\section{Project Overview}
+
+We observe that for some machine learning algorithms and applications, we can
+perform grid partitioning on data to minimize the amount of data to be
+communicated. Moreover, for applications that tolerates long latency of updates,
+we may organize worker nodes into a logic grid and restrict nodes to only
+communicate with its neighbors to avoid the problem that some particular nodes
+becomes the bottelneck of the entire system. Finally, by carefully reordering
+data matrix in to diagonal block marix, we can futher reduce the
+communication needed among nodes.
+
+We realize that such quilting schem only applies to certain application
+senarios. For example, the grid communication pattern has inevitably long
+latency for update propagation, which requires the application to be able to
+tolerate such long latency. In this project, we will investigate the above
+techniques and aim at identifying application senarios where they may apply.
+
+\subsection{Data Partition}
+Different partitioning scheme requires different amount of data to be
+communicated. For example, consider dual decomposition,
+which iteratively executes two matrix multiplications:
+\begin{align*}
+w &= A \times u \\
+u &= A^T \times w,
+\end{align*}
+where $A$ is a gigantic data matrix and $u$ and $w$ are two vectors.
+
+Given a $n$-by-$m$ matrix $A$, we want to divide the matrix into $p$ machines
+while minimizing the amount of data to be communicated in each iteration.
+
+If we cut the matrix into $a$ rows and $b$ columns, then the minimal data
+communication is
+
+\begin{equation}
+  r  am +  c bn
+  \label{eq:total-traffic}
+\end{equation}
+where $r,c \in [0,1]$ are coefficient depending on the sparsity of the
+matrix. They should be a function as $a$ and $b$, but now we consider it as a
+constant to simply the calculation.
+
+Note that $ab=p$, then (\ref{eq:total-traffic}) get minimize value when
+$a = \rbr{ \frac{cn}{rm} }^{\frac{1}{2}}\sqrt{p}$. That is, if $cn \gg rm$, we
+should choose partition scheme 1, if $rm \gg cn$, we should use scheme 2, while
+if $rm \approx cn$, the even partition scheme 3 is a better choice.
+
+\begin{figure}[th!]
+  \centering
+\begin{tikzpicture}[scale=.5]
+  \draw [fill=set12!60](0,0) rectangle (4,1)
+  rectangle (0,2) rectangle (4,3) rectangle (0,4);
+  \draw[xshift=6cm, fill=set11!60] (0,0) rectangle (1,4) rectangle (2,0) rectangle (3,4)
+  rectangle (4,0);
+  \draw[xshift=12cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
+  \draw[xshift=14cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
+\end{tikzpicture}
+  \caption{partition scheme 1 to 3: $a=4,b=1$, $a=1,b=4$, and $a=2,b=2$}
+\end{figure}
+
+
+\subsection{Data Communication}
+
+\vskip 2ex
+
+\begin{figure}[th!]
+  \centering
+  \begin{tikzpicture}[scale=.9]
+    \tikzstyle{block} = [rectangle, draw, minimum size=1.6cm, text centered, rounded
+    corners, minimum height=.8cm, font=\bf, text=white, thick]
+
+    \foreach \i/\x in {0/0,1/2,2/4,3/8} {
+      \node [block,fill=set12!80]  (s\i) at (\x cm, 2cm) {Server};
+    }
+
+    \foreach \i/\x in {0/0,1/2,2/4,3/8} {
+      \node [block,fill=set13!80] (n\i) at (\x cm, 0cm) {Client};
+    }
+
+    \node at (6cm,2cm) {{\large $\cdots$}};
+    \node at (6cm,0cm) {{\large $\cdots$}};
+    \foreach \i in {0,1,2,3} {
+      \foreach \j in {0,1,2,3} {
+        \draw[<->, >=stealth,thick]  (n\i.north) -- (s\j.south);
+      }
+    }
+  \end{tikzpicture}
+  \caption{Parameter Server}
+\end{figure}
+
+
+As described, when used for sharing access to parameters, parameter server
+can be easily overloaded and become the bottelneck of the system, especially
+when the problem size and number of nodes scale up. Also, the free communication
+pattern in the parameter server approach may easily congest the upper-tier links
+of the tree network topology commonly seen in today's datacenter networks.
+
+Instead of allowing nodes to freely communcate with each other, in our
+framewrok, we propose a restricted communication paradigm where nodes form a
+grid and each node only communicates with its logical neighbors in the grid, as
+shown in Fig~\ref{fig:grid}. As each node only communicates with its neighbors,
+such simple communication pattern effectively avoids the risk of loading a
+single node.
+
+\begin{figure}[th!]
+\centering
+\includegraphics[width=0.35\textwidth]{grid.pdf}
+\caption{Grid communication pattern}
+\label{fig:grid}
+\end{figure}
+
+
+\subsection{Data Processing}
+
+Most large scale data are sparse and compressionable. Figure \ref{fig:block}
+demonstrates an example that a sparse matrix can be reordered in rows and columns
+to get a block form~\cite{Kang_beyond‘caveman}. Given a near diagonal block
+matrix, it is better to maitain a whole block in a single machine, and that
+machine will also be the ``master'' for the parameters, namely $u$ and $w$ in
+our example, of this block, denoted by $u_b$ and $w_b$. Then only a small
+portion of $u_b$ and $w_b$ will be shared outside this machine. The data
+communication of this block of parameter, therefore, reduced.
+\begin{figure}[th!]
+  \centering
+\begin{tikzpicture}[scale=.5]
+  \draw[fill=set13!60] (0,0) rectangle (2,2) rectangle (4,4);
+  \draw[] (4,0) rectangle (2,2) rectangle (0,4);
+\end{tikzpicture}
+  \caption{A block diagnal matrix}
+\end{figure}
+
+
+However, the methods proposed in \cite{Kang_beyond‘caveman} cannot be scaled to
+very large datasets. We need to design more efficient data precessing method.
+
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.4\textwidth]{block}
+  \caption{reordering of a real sparse matrix}
+  \label{fig:block}
+\end{figure}
+
+\section{Experiments}
+
+We shall implement one or a few distirbuted machine learning algorithms, such as
+ linear regression, LDA topic modeling and deep neural network. The
+implementation will be evaluated against real datasets and the evaluation will
+be run on PDL's clusters.
+
+\section{Agenda}
+
+\begin{itemize*}
+\item read some hpc grid-computing papers: 2 weeks
+\item decide the communication patterns: 2 weeks
+\item implementation: 2 weeks
+\item evaluation: 2 weeks
+\item writing final report: 1 week
+\end{itemize*}
+
+\appendix
+\section{Acknowledgements}
+The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
+for helpful discussion.
+
+\bibliography{ref}
+\bibliographystyle{abbrvnat}
+
+\end{document}
