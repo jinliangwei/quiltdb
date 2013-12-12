@@ -174,6 +174,7 @@ void RSpMat<I,V>::VSlice(const Seg& col, RSpMat<I2,V> *res) {
         res->index()[o] = (I2) (c - col.start());
         if (has_value())
           res->value()[o] = value_[j];
+        ++ o;
       }
     }
     res->offset()[i+1] = o;

@@ -90,7 +90,6 @@ int main(int argc, char *argv[]) {
   CHECK_EQ(nf, 1);
   CHECK(adjs[0].square());
 
-  for (int it = 0; it < 10; ++it) {
     int f = 0;
 
     uint32_t* index = adjs[f].index();
@@ -100,14 +99,18 @@ int main(int argc, char *argv[]) {
     DVec w = DVec::Ones(col.size()) * penalty;
     DVec u(adjs[f].rows());
 
+  for (int it = 0; it < 40; ++it) {
     for (size_t i = 0; i < adjs[f].rows(); ++i) {
       double v = 0;
+      double degree = offset[i+1] - offset[i];
       for (uint32_t j = offset[i]; j < offset[i+1]; ++j) {
-        v += w[index[j]];
+        v += w[index[j]] / degree;
       }
       u[i] = v*FLAGS_alpha + penalty;
     }
-    LL << "iter " << it << " err " << (u-w).norm() / w.norm();
+    LL << "iter " << it << " err " << (u-w).norm() / w.norm()
+       << " 1-norm " << w.cwiseAbs().sum();
+    w = u;
   }
 
   return 0;
