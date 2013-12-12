@@ -9,9 +9,9 @@ using namespace quiltdb;
 // DEFINE_string(data_input, "/media/muli/data/webgraph-subdomain/bin/part-", "");
 DEFINE_string(data_input, "data/stanford-", "");
 DEFINE_string(data_output, "../data/subdomain", "");
-DEFINE_int32(data_part_num, 8, "");
-DEFINE_int32(grid_row_num, 2, "");
-DEFINE_int32(grid_col_num, 2, "");
+DEFINE_int32(data_part_num, 1, "");
+DEFINE_int32(grid_row_num, 1, "");
+DEFINE_int32(grid_col_num, 1, "");
 
 DEFINE_int32(my_row_rank, 0, "");
 DEFINE_int32(my_col_rank, 0, "");

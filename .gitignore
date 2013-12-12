@@ -28,3 +28,10 @@ external_testbed/third_party/
 *.lai
 *.la
 *.a
+
+#
+
+apps/pagerank/pr
+apps/pagerank/data
+doc/slides
+*project*

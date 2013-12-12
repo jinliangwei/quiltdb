@@ -13,7 +13,7 @@ namespace quiltdb {
 template <class T>
 static size_t load_bin(std::string const& filename, T **buf, long offset, size_t n) {
   FILE *fp = fopen(filename.c_str(), "rb");
-  CHECK(fp == NULL) <<  "open " << filename << " for reading failed";
+  CHECK(fp != NULL) <<  "open " << filename << " for reading failed";
   if (*buf == NULL) *buf = new T[n];
   if (offset != 0)
     CHECK_EQ(fseek(fp, offset*sizeof(T), SEEK_SET),0) << "fseek failed";
@@ -26,8 +26,10 @@ static size_t load_bin(std::string const& filename, T **buf, long offset, size_t
 template <class T>
 static size_t bin_length(std::string const& filename) {
   struct stat file_stat;
-  CHECK_EQ(stat(filename.c_str(), &file_stat), 0) << "stat " << filename;
-  return  file_stat.st_size / sizeof(T);
+  if (stat(filename.c_str(), &file_stat) == 0) {
+    return  file_stat.st_size / sizeof(T);
+  }
+  return 0;
 }
 
 template <class T>
