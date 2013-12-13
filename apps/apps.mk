@@ -3,8 +3,8 @@ APPS_DIR = $(PROJ_DIR)/apps
 
 QUILTDB_APP_DY_LIBS = -pthread -Wl,-Bdynamic -ltbb
 QUILTDB_APP_ST_LIBS = -Wl,-Bstatic -lzmq -lboost_thread -lboost_system \
-		 -lglog -lgflags -lrt -lnsl -luuid -ltcmalloc -lunwind \
-		 -lyaml-cpp
+		 -lglog -lgflags -lrt -lnsl -ltcmalloc -lunwind \
+		 -lyaml-cpp # -luuid
 
 QUILTDB_SRC_CPP = $(QUILTDB_SRC)/include/quiltdb.cpp \
 	$(QUILTDB_SRC)/utils/zmq_util.cpp \

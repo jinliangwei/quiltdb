@@ -59,9 +59,14 @@ void AssignData(NodeFiles *node_files, Blocks *col_blocks) {
 //      << FLAGS_my_col_rank << "_" << i;
 
 
+#include <quiltdb/include/quiltdb.hpp>
+
+DEFINE_string(config_file, "", "configuration file");
+DEFINE_int32(myhid, 0, "my h id");
+DEFINE_int32(myvid, 1, "my v id");
+
 int main(int argc, char *argv[]) {
 
-  // some configuration, will use gflag later..
 
   // preprocess data
   NodeFiles node_files;
