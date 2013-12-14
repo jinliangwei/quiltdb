@@ -57,12 +57,66 @@ system includes,
 On this section, we overview several common network topolgies.
 \subsection{Grid}
 \subsection{Star}
+
 \section{Machine Learning Applications}
 
 \subsection{Pagerank}
 \subsection{Loss minimization}
 
 \section{Implementation}
+In this section, we discuss our system implementation along with techniques to 
+minimize communication cost.
+
+\subsection{Propagator-Receiver Pair}
+
+Each physical node runs one QuiltDB process. The architecture of a single 
+QuiltDB process is visualized in Fig~\ref{fig:prop-recv}.  The QuiltDB process
+contains a set of application threads which execute application procedures and 
+access the distributed paramters via the QuiltDB stub. 
+
+The core of a QuiltDB stub is a paired propagator-receiver structure, which is 
+referred to as \emph{logical node}. Namely the propagator-receiver pair consists
+of a receiver, a propagator and a set of tables registered with this 
+\emph{logical node}. The \emph{logical node} serves read and write accesses to 
+key-value pairs, batches and aggregates operation logs for writes and propagate 
+them to other QuiltDB processes, receives incoming operation logs and act upon 
+received operation logs appropriately according to corresponding table 
+configurations. One \emph{logical node} lets the QuiltDB process to participate 
+in one update propagation path
+A QuiltDB stub may contain multiple \emph{logical nodes} and 
+there is no limit on the number of \emph{logical node}s. Howerver, our current 
+implementation supports up to two \emph{logical nodes} as that suffices the 
+needs of most applications.
+
+A \emph{logical node} may have multiple tables registered with it. Since QuiltDB
+requires value stored in one table to be of the same size, supporting multiple 
+tables allows QuiltDB to support multiple types of values. The underlying data 
+storage of table is a concurrent hash table.
+
+When application threads read a key via GET(), the value is served directly from
+the concurrent hash table. When application threads write a key via INC(), the 
+operation is applied to the concurrent hash table and a operation log is 
+appended to the propagator OpLog queue. The propagator thread reads the 
+operation log from the queue. Instead of sending out the operation log 
+immediately, the propagator batches operation logs and aggregate them (see
+Section~\ref{sec:update-aggreg} for more details) in order to minimize 
+communication overhead. Batched operation logs are grouped by table ID and are
+sent out every $n$ micro-seconds, where $n$ is a user-configurable parameter.
+
+A \emph{logical node} may have at most one \emph{logical node} as its downstream
+receiver.
+
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.5\textwidth]{fig/propagator-receiver.pdf}
+  \caption{Single Node Architecture}
+  \label{fig:prop-recv}
+\end{figure}
+
+\subsection{Update Aggregration}
+\label{sec:update-aggreg}
+
+\subsection{Cyclic Path}
 
 \section{Evaluation}
 
@@ -170,12 +224,12 @@ shown in Fig~\ref{fig:grid}. As each node only communicates with its neighbors,
 such simple communication pattern effectively avoids the risk of loading a
 single node.
 
-\begin{figure}[th!]
-\centering
-\includegraphics[width=0.35\textwidth]{grid.pdf}
-\caption{Grid communication pattern}
-\label{fig:grid}
-\end{figure}
+%\begin{figure}[th!]
+%\centering
+%\includegraphics[width=0.35\textwidth]{grid.pdf}
+%\caption{Grid communication pattern}
+%\label{fig:grid}
+%\end{figure}
 
 
 \subsection{Data Processing}

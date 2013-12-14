@@ -2,9 +2,9 @@
 all: pdf
 
 pdf:
-	pdflatex proposal.tex
-	bibtex proposal
-	pdflatex proposal.tex
+	pdflatex quiltdb.tex
+	bibtex quiltdb
+	pdflatex quiltdb.tex
 
 clean:
 	rm -rf *.aux *.log *.dvi *.blg
