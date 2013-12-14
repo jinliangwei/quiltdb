@@ -12,15 +12,18 @@
 \maketitle
 
 \begin{abstract}
-In this paper we proposal QuiltDB, a distributed database optimized for network
+In this paper we proposal QuiltDB, a distributed database execution engine optimized for network
 topology.
+%QuiltDB bridge the gap between
+%provides several network topologies  User can specify a desirable network topology  QuiltDB is implemented by discrete
+\footnote{C++ codes are available at \url{https://github.com/jinliangwei/quiltdb/}}
 \end{abstract}
 
 \section{Introduction}
 
-In distributed machine learning applications, data as well as computation are
-partitioned among hundreds or  thousands of machines. Those
-worker machines compute local results based on their own data. Global solutions
+In distributed machine learning applications, data,  as well as computation, are
+partitioned into hundreds or  thousands of machines. Those
+worker machines compute local results based on their own part of data. Global solutions
 are then obtained via synchronization.
 
 Machine synchronization, including data communication and waiting, is typically
@@ -50,18 +53,141 @@ system includes,
 \item A discrete streaming system.
 \end{itemize*}
 
-
-
 \section{Network Topologies}
+\label{sec:network-topologies}
 
-On this section, we overview several common network topolgies.
-\subsection{Grid}
-\subsection{Star}
+Several network topologies have been proposed by HPC community, including grid,
+hyper-cube, buffer-fly, etc. Algorithms are then mapped into network topology to
+maximize the communication efficiency. On the other hand, cloud computing
+typically adopts
+tree-like structures, which aims to approximate an uniform all-to-all connection
+and provide fault tolerance and elastic scalability.
+
+\subsection{Grid Communication}
+
+Grid is the one of the simplest communication pattern, which is shown in
+Figure~\ref{fig:grid2}. Machines are connected both vertically and
+horizontally. Each machine only communicates with its 4 neighbors. Its
+restricted connections make it comparable cheap to build the physical
+network. It also relieves switchers' burden on the cloud computing setting.
+However, if the two machines are far away, then the network delay between these
+two is also large.
+
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.25\textwidth]{fig/grid}
+  \caption{Grid communication}
+  \label{fig:grid2}
+\end{figure}
+
+\subsection{Two-layer Network}
+
+The grid communication is somewhat too restrictive. Nowadays machines within a
+datacenter are typically first connected by top-rack switchers. Due to the high
+bandwidth in a switcher, machines in the same rack usually have decent
+point-to-point bandwidth. Therefore we may use more flexible within rack
+communication pattern. Figure~\ref{fig:rack} shows a simple example, where
+machines only talk to the others in the neighbor rack, while any two machines
+within the same rack could communicate.
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.25\textwidth]{fig/rack}
+  \caption{More flexible within rack communication.}
+  \label{fig:rack}
+\end{figure}
 
 \section{Machine Learning Applications}
 
+On this section, we describe several machine learning applications which fits
+into the communication pattern we discussed on Section
+\ref{sec:network-topologies}.
+
+\subsection{Data Partition}
+
+On a typical distributed machine learning application, both data and shared
+parameters are partitioned into a group of machines.
+Different partitioning scheme requires different amount of data to be
+communicated. For example, consider the following iterative matrix
+multiplications, which is a typical machine learning workload:
+\begin{align*}
+w &= X u \\
+u &= X^T w,
+\end{align*}
+where $X$ is a gigantic data matrix and $u$ and $w$ are two vectors.
+
+Given a $n$-by-$m$ matrix $X$, we want to divide the matrix into $p$ machines
+while minimizing the amount of data to be communicated in each iteration.
+
+If we cut the matrix into $a$ rows and $b$ columns, then the minimal data
+communication is
+
+\begin{equation}
+  r  am +  c bn
+  \label{eq:total-traffic}
+\end{equation}
+where $r,c \in [0,1]$ are coefficient depending on the sparsity of the
+matrix. They should be a function as $a$ and $b$, but now we consider it as a
+constant to simply the calculation.
+
+Note that $ab=p$, then (\ref{eq:total-traffic}) get minimize value when
+$a = \rbr{ \frac{cn}{rm} }^{\frac{1}{2}}\sqrt{p}$. That is, if $cn \gg rm$, we
+should choose partition scheme 1, if $rm \gg cn$, we should use scheme 2, while
+if $rm \approx cn$, the even partition scheme 3 is a better choice.
+
+\begin{figure}[th!]
+  \centering
+\begin{tikzpicture}[scale=.5]
+  \draw [fill=set12!60](0,0) rectangle (4,1)
+  rectangle (0,2) rectangle (4,3) rectangle (0,4);
+  \draw[xshift=6cm, fill=set11!60] (0,0) rectangle (1,4) rectangle (2,0) rectangle (3,4)
+  rectangle (4,0);
+  \draw[xshift=12cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
+  \draw[xshift=14cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
+\end{tikzpicture}
+  \caption{partition scheme 1 to 3: $a=4,b=1$, $a=1,b=4$, and $a=2,b=2$}
+\end{figure}
+
 \subsection{Pagerank}
+
+Given adjacent matrix $X$, where $X_{ij} = 1 $ if and only if webpage $i$ cites
+$j$. Denote by $D=\textrm{diag}{\sum_i X_{i1}, \ldots, \sum_{i=1} X_{in}}$ the diagnal
+adjacent matrix, then pagerank can be solved by.
+\begin{equation}
+  w = \alpha X^T D^{-1} w + (1-\alpha)\frac{1}{n}
+\end{equation}
+
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.25\textwidth]{fig/pr}
+  \caption{Pagerank}
+  \label{fig:pr}
+\end{figure}
+
+The workload is summarized in Figure~\ref{fig:pr}. It is convenient to view the
+updating as two steps, the
+first step compute the new value of $w$, and then update $w$. To extend pagerank
+into a distributed algorithm, we consider the grid data partition. Then each
+machine also execute the computing and then updating steps. The only difference
+is that updating involves network communications. On the example, each rack get
+a group of columns of $X$. One particular  machine in the rack gathers the
+updates within the rack and then propagates to other racks.
+
+\begin{figure}[th!]
+  \centering
+  \includegraphics[width=.25\textwidth]{fig/compute}
+  \includegraphics[width=.25\textwidth]{fig/update}
+  \caption{Two steps of pagerank: compute and then update}
+\end{figure}
+
 \subsection{Loss minimization}
+
+Loss minimization solves the following optimization problem:
+\begin{equation}
+  \min_w \sum_{i=1}^{n} f(\langle x_i, w\rangle, y_i) + \lambda r(w)
+\end{equation}
+It fits into our setting by considering the primal-dual view, where $w$ is the primal
+variable, while $\partial f(\langle x_i, w\rangle, y_i) x_i$ is the dual. Then
+the optimization method computes and updates the prime and dual alternatively.
 
 \section{Implementation}
 In this section, we discuss our system implementation along with techniques to 
@@ -118,171 +244,37 @@ receiver.
 
 \subsection{Cyclic Path}
 
-\section{Evaluation}
-
-\appendix
-\section{Project Overview}
-
-We observe that for some machine learning algorithms and applications, we can
-perform grid partitioning on data to minimize the amount of data to be
-communicated. Moreover, for applications that tolerates long latency of updates,
-we may organize worker nodes into a logic grid and restrict nodes to only
-communicate with its neighbors to avoid the problem that some particular nodes
-becomes the bottelneck of the entire system. Finally, by carefully reordering
-data matrix in to diagonal block marix, we can futher reduce the
-communication needed among nodes.
-
-We realize that such quilting schem only applies to certain application
-senarios. For example, the grid communication pattern has inevitably long
-latency for update propagation, which requires the application to be able to
-tolerate such long latency. In this project, we will investigate the above
-techniques and aim at identifying application senarios where they may apply.
-
-\subsection{Data Partition}
-Different partitioning scheme requires different amount of data to be
-communicated. For example, consider dual decomposition,
-which iteratively executes two matrix multiplications:
-\begin{align*}
-w &= A \times u \\
-u &= A^T \times w,
-\end{align*}
-where $A$ is a gigantic data matrix and $u$ and $w$ are two vectors.
-
-Given a $n$-by-$m$ matrix $A$, we want to divide the matrix into $p$ machines
-while minimizing the amount of data to be communicated in each iteration.
-
-If we cut the matrix into $a$ rows and $b$ columns, then the minimal data
-communication is
-
-\begin{equation}
-  r  am +  c bn
-  \label{eq:total-traffic}
-\end{equation}
-where $r,c \in [0,1]$ are coefficient depending on the sparsity of the
-matrix. They should be a function as $a$ and $b$, but now we consider it as a
-constant to simply the calculation.
-
-Note that $ab=p$, then (\ref{eq:total-traffic}) get minimize value when
-$a = \rbr{ \frac{cn}{rm} }^{\frac{1}{2}}\sqrt{p}$. That is, if $cn \gg rm$, we
-should choose partition scheme 1, if $rm \gg cn$, we should use scheme 2, while
-if $rm \approx cn$, the even partition scheme 3 is a better choice.
-
-\begin{figure}[th!]
-  \centering
-\begin{tikzpicture}[scale=.5]
-  \draw [fill=set12!60](0,0) rectangle (4,1)
-  rectangle (0,2) rectangle (4,3) rectangle (0,4);
-  \draw[xshift=6cm, fill=set11!60] (0,0) rectangle (1,4) rectangle (2,0) rectangle (3,4)
-  rectangle (4,0);
-  \draw[xshift=12cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
-  \draw[xshift=14cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
-\end{tikzpicture}
-  \caption{partition scheme 1 to 3: $a=4,b=1$, $a=1,b=4$, and $a=2,b=2$}
-\end{figure}
-
-
-\subsection{Data Communication}
-
-\vskip 2ex
-
-\begin{figure}[th!]
-  \centering
-  \begin{tikzpicture}[scale=.9]
-    \tikzstyle{block} = [rectangle, draw, minimum size=1.6cm, text centered, rounded
-    corners, minimum height=.8cm, font=\bf, text=white, thick]
-
-    \foreach \i/\x in {0/0,1/2,2/4,3/8} {
-      \node [block,fill=set12!80]  (s\i) at (\x cm, 2cm) {Server};
-    }
-
-    \foreach \i/\x in {0/0,1/2,2/4,3/8} {
-      \node [block,fill=set13!80] (n\i) at (\x cm, 0cm) {Client};
-    }
-
-    \node at (6cm,2cm) {{\large $\cdots$}};
-    \node at (6cm,0cm) {{\large $\cdots$}};
-    \foreach \i in {0,1,2,3} {
-      \foreach \j in {0,1,2,3} {
-        \draw[<->, >=stealth,thick]  (n\i.north) -- (s\j.south);
-      }
-    }
-  \end{tikzpicture}
-  \caption{Parameter Server}
-\end{figure}
-
-
-As described, when used for sharing access to parameters, parameter server
-can be easily overloaded and become the bottelneck of the system, especially
-when the problem size and number of nodes scale up. Also, the free communication
-pattern in the parameter server approach may easily congest the upper-tier links
-of the tree network topology commonly seen in today's datacenter networks.
-
-Instead of allowing nodes to freely communcate with each other, in our
-framewrok, we propose a restricted communication paradigm where nodes form a
-grid and each node only communicates with its logical neighbors in the grid, as
-shown in Fig~\ref{fig:grid}. As each node only communicates with its neighbors,
-such simple communication pattern effectively avoids the risk of loading a
-single node.
-
-%\begin{figure}[th!]
-%\centering
-%\includegraphics[width=0.35\textwidth]{grid.pdf}
-%\caption{Grid communication pattern}
-%\label{fig:grid}
-%\end{figure}
-
-
-\subsection{Data Processing}
-
-Most large scale data are sparse and compressionable. Figure \ref{fig:block}
-demonstrates an example that a sparse matrix can be reordered in rows and columns
-to get a block form~\cite{Kang_beyond‘caveman}. Given a near diagonal block
-matrix, it is better to maitain a whole block in a single machine, and that
-machine will also be the ``master'' for the parameters, namely $u$ and $w$ in
-our example, of this block, denoted by $u_b$ and $w_b$. Then only a small
-portion of $u_b$ and $w_b$ will be shared outside this machine. The data
-communication of this block of parameter, therefore, reduced.
-\begin{figure}[th!]
-  \centering
-\begin{tikzpicture}[scale=.5]
-  \draw[fill=set13!60] (0,0) rectangle (2,2) rectangle (4,4);
-  \draw[] (4,0) rectangle (2,2) rectangle (0,4);
-\end{tikzpicture}
-  \caption{A block diagnal matrix}
-\end{figure}
-
-
-However, the methods proposed in \cite{Kang_beyond‘caveman} cannot be scaled to
-very large datasets. We need to design more efficient data precessing method.
-
-\begin{figure}[th!]
-  \centering
-  \includegraphics[width=.4\textwidth]{block}
-  \caption{reordering of a real sparse matrix}
-  \label{fig:block}
-\end{figure}
-
 \section{Experiments}
 
-We shall implement one or a few distirbuted machine learning algorithms, such as
- linear regression, LDA topic modeling and deep neural network. The
-implementation will be evaluated against real datasets and the evaluation will
-be run on PDL's clusters.
+\subsection{Setup}
 
-\section{Agenda}
+We will evaluate two algorithm. One is pagerank, the other one is logistic
+regression, a loss minimization algorithm with logit loss. The latter is still
+under developing. We use two large scale real datasets. One is the hyperlink
+graph\footnote{\url{http://webdatacommons.org/hyperlinkgraph/}}, which consists
+of 3.5 billion web pages and 128 billion hyperlinks. The raw text data is
+roughly 1 Terabyte, and consumes around 1 Terabyte memory by storing the page-id
+by 64-bit integer. The other one is a Twitter dataset crawled at CMU on the past
+4 years. It has around 1 billion of samples and hundreds millions of
+features.
 
-\begin{itemize*}
-\item read some hpc grid-computing papers: 2 weeks
-\item decide the communication patterns: 2 weeks
-\item implementation: 2 weeks
-\item evaluation: 2 weeks
-\item writing final report: 1 week
-\end{itemize*}
+We evaluate our system on PDL's cluster Susitna, which has 36 machines in
+total. Each machine has 64 AMD cores and 128G memory. All machines are connected
+to a single top-rack switcher.
 
-\appendix
-\section{Acknowledgements}
-The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
-for helpful discussion.
+We compare our system against two other two systems. One is a standard BSP
+model implemented by MPI. The communication is done by AllReduce, which merges
+the results via a tree path. The other system is parameter server. It is an
+asynchronous machine learning system using a server/client architecture.
+
+\subsection{Planed Experiments}
+
+We will evaluate
+
+% \appendix
+% \section{Acknowledgements}
+% The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
+% for helpful discussion.
 
 \bibliography{ref}
 \bibliographystyle{abbrvnat}
