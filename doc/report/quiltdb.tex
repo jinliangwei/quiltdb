@@ -12,15 +12,18 @@
 \maketitle
 
 \begin{abstract}
-In this paper we proposal QuiltDB, a distributed database optimized for network
+In this paper we proposal QuiltDB, a distributed database execution engine optimized for network
 topology.
+%QuiltDB bridge the gap between
+%provides several network topologies  User can specify a desirable network topology  QuiltDB is implemented by discrete
+\footnote{C++ codes are available at \url{https://github.com/jinliangwei/quiltdb/}}
 \end{abstract}
 
 \section{Introduction}
 
-In distributed machine learning applications, data as well as computation are
-partitioned among hundreds or  thousands of machines. Those
-worker machines compute local results based on their own data. Global solutions
+In distributed machine learning applications, data,  as well as computation, are
+partitioned into hundreds or  thousands of machines. Those
+worker machines compute local results based on their own part of data. Global solutions
 are then obtained via synchronization.
 
 Machine synchronization, including data communication and waiting, is typically
@@ -195,14 +198,33 @@ the optimization method computes and updates the prime and dual alternatively.
 
 \subsection{Setup}
 
+We will evaluate two algorithm. One is pagerank, the other one is logistic
+regression, a loss minimization algorithm with logit loss. The latter is still
+under developing. We use two large scale real datasets. One is the hyperlink
+graph\footnote{\url{http://webdatacommons.org/hyperlinkgraph/}}, which consists
+of 3.5 billion web pages and 128 billion hyperlinks. The raw text data is
+roughly 1 Terabyte, and consumes around 1 Terabyte memory by storing the page-id
+by 64-bit integer. The other one is a Twitter dataset crawled at CMU on the past
+4 years. It has around 1 billion of samples and hundreds millions of
+features.
 
-\appendix
+We evaluate our system on PDL's cluster Susitna, which has 36 machines in
+total. Each machine has 64 AMD cores and 128G memory. All machines are connected
+to a single top-rack switcher.
 
+We compare our system against two other two systems. One is a standard BSP
+model implemented by MPI. The communication is done by AllReduce, which merges
+the results via a tree path. The other system is parameter server. It is an
+asynchronous machine learning system using a server/client architecture.
 
-\appendix
-\section{Acknowledgements}
-The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
-for helpful discussion.
+\subsection{Planed Experiments}
+
+We will evaluate
+
+% \appendix
+% \section{Acknowledgements}
+% The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
+% for helpful discussion.
 
 \bibliography{ref}
 \bibliographystyle{abbrvnat}
