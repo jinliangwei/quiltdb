@@ -12,11 +12,14 @@
 \maketitle
 
 \begin{abstract}
-In this paper we proposal QuiltDB, a distributed database execution engine optimized for network
-topology.
-%QuiltDB bridge the gap between
-%provides several network topologies  User can specify a desirable network topology  QuiltDB is implemented by discrete
-\footnote{C++ codes are available at \url{https://github.com/jinliangwei/quiltdb/}}
+  Distributed machine learning applications produces a huge amount of network
+  traffic. However, network bandwidth is one of the most scarce resources in
+  datacenters.  In this paper we proposal QuiltDB, a distributed database
+  execution engine optimized for network topology. QuiltDB trades off latency
+  for high bandwidth. It executes in a discrete streaming fashion and allows
+  users to specify desirable network topologies. We evaluate this system on
+  several machine learning applications with real datasets\footnote{C++ codes
+    are available at \url{https://github.com/jinliangwei/quiltdb/}}.
 \end{abstract}
 
 \section{Introduction}
@@ -48,8 +51,15 @@ machine learning applications into network topologies. Key features of this
 system includes,
 
 \begin{itemize*}
+\item Grid data partition. Traditional databases uses either vertical or
+  horizontal partition. However, a grid partition could reduce the network
+  traffic volume if the training data is near square, namely the number of
+  instances and features are on the same scale.
+\item Model machine learning applications using the
+  primal-dual approach. The primal-dual decomposition fits into the grid
+  partition in nature, where the primal variables are shared horizontally, while
+  the dual variables are communicated vertically.
 \item Allow use-defined network topology.
-\item Model machine learning applications by the primal-dual decomposition.
 \item A discrete streaming system.
 \end{itemize*}
 
@@ -223,20 +233,20 @@ oplog deduplicatoin mechanism (see Section~\ref{sec:cyclic-path}).
 class Table{
   template<typename ValueType>
   ValueType Get(int64_t _key);
-  
+
   template<typename ValueType>
   void Inc(int64_t _key, ValueType _delta);
 };
 
-typedef int (*ValueAddFunc)(uint8_t *v1, 
+typedef int (*ValueAddFunc)(uint8_t *v1,
                             const uint8_t *v2,
                             int32_t size);
-typedef int (*ValueSubFunc)(uint8_t *v1, 
+typedef int (*ValueSubFunc)(uint8_t *v1,
                             const uint8_t *v2,
                             int32_t size);
 
 \end{verbatim}
-\caption{Semantics of QuiltDB table APIs and the addition and subtraction 
+\caption{Semantics of QuiltDB table APIs and the addition and subtraction
   functions}
 \label{fig:table-api}
 \end{figure}
@@ -248,34 +258,34 @@ as tables. Values are treated as byte array internally and values stored in one
 table are required to have the same size. Supporting multiple tables allows 
 QuiltDB to support different types of data.
 
-QuiltDB requires the value type to support two operations, \emph{addition} and 
+QuiltDB requires the value type to support two operations, \emph{addition} and
 \emph{subtraction}. In order to support update aggregation, \emph{addition} must
  be commutative and associative. For numerical types,  the meaning of 
 \emph{addition} and \emph{substraction} are straightforward. The interface of 
 QuiltDB tables and the semantics of addition and subtractions are shown in
 Figure~\ref{fig:table-api}.
 
-The only write operation supported by the key-value storage is INC which takes 
+The only write operation supported by the key-value storage is INC which takes
 in a delta and apply the delta to a value via \emph{addition}.
 
 \subsection{Callback Functions}
 \label{sec:callback}
 
-In most cases, when updates from other nodes are received, they are applied to 
-local copy of shared data and forwarded to downstream node silently. 
-However, there are applications that need to be notified upon receiving updates 
-to perform some special procedure, such as relaying the updates received from 
-one path to another. For this special case, QuiltDB allows aplication to 
-register a callback per table which is executed upon the receipt of updates. As 
-said in Section~\ref{sec:pagerank}, the callback function is essential to 
+In most cases, when updates from other nodes are received, they are applied to
+local copy of shared data and forwarded to downstream node silently.
+However, there are applications that need to be notified upon receiving updates
+to perform some special procedure, such as relaying the updates received from
+one path to another. For this special case, QuiltDB allows aplication to
+register a callback per table which is executed upon the receipt of updates. As
+said in Section~\ref{sec:pagerank}, the callback function is essential to
 propagate updates to other ranks.
 
-Application may set proper flags on a table to let QuiltDB perform any 
-combination of the three actions on received updates: 1) apply them on local 
+Application may set proper flags on a table to let QuiltDB perform any
+combination of the three actions on received updates: 1) apply them on local
 copy, 2)forward them to downstream node and 3) execute user callback.
 
 \section{Implementation}
-In this section, we discuss our system implementation along with techniques to 
+In this section, we discuss our system implementation along with techniques to
 minimize communication cost.
 
 \begin{figure}[th!]
@@ -306,22 +316,22 @@ in one update propagation path. A QuiltDB stub may contain multiple
 node}s. Howerver, our current implementation supports up to two \emph{logical 
 node}s as that suffices the needs of most applications.
 
-As said above, a \emph{logical node} may have multiple tables registered with it. 
+As said above, a \emph{logical node} may have multiple tables registered with it.
 When application threads read a key via GET(), the value is served directly from
-the concurrent hash table. When application threads write a key via INC(), the 
-operation is applied to the concurrent hash table and a operation log is 
-appended to the propagator OpLog queue. The propagator thread reads the 
-operation log from the queue. Instead of sending out the operation log 
+the concurrent hash table. When application threads write a key via INC(), the
+operation is applied to the concurrent hash table and a operation log is
+appended to the propagator OpLog queue. The propagator thread reads the
+operation log from the queue. Instead of sending out the operation log
 immediately, the propagator batches operation logs and aggregate them (see
-Section~\ref{sec:update-aggreg} for more details) in order to minimize 
+Section~\ref{sec:update-aggreg} for more details) in order to minimize
 communication overhead. Batched operation logs are grouped by table ID and are
 sent out every $n$ micro-seconds, where $n$ is a user-configurable parameter.
 
 A \emph{logical node} may have at most one \emph{logical node} as its downstream
-receiver. A logical node's propagator is connected with the downstream node's 
+receiver. A logical node's propagator is connected with the downstream node's
 receiver and the aggregated operation logs are sent from propagator to receiver
 at the end of each batch interval. Propagators and receivers of the same QuiltDB
-process may use different NICs to maximzie network utilization. Upon receiving 
+process may use different NICs to maximzie network utilization. Upon receiving
 a set of updates, the receiver performs actions according to flags set on table
 by user application.
 
@@ -371,7 +381,19 @@ asynchronous machine learning system using a server/client architecture.
 
 \subsection{Planed Experiments}
 
-We will evaluate
+Ideally we should evaluate our system on a datacenter using hundreds of
+machines with even larger datasets, where the network congestion is more
+serious. However, we will try Susitna first, because of its better machine
+configuration than other PDL clusters. The 40G network bandwidth of Sustina may
+be too good for our experiments. We will use tool to limit its
+bandwidth. Another PDL cluster under our consideration is Marmort. It owns more
+machines than Sustina, but each machine only has two cores and 4G memory, it
+makes our implementation more challenge.
+
+One key experiment will be comparing running time versus objective value, under
+different network configurations. We expect that MPI is the least efficient
+system, because of the synchronous communication. QuiltDB may outperform
+parameter server, especially for very large dataset but poor network.
 
 % \appendix
 % \section{Acknowledgements}
