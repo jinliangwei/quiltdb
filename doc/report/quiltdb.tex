@@ -1,7 +1,8 @@
 % \documentclass[11pt]{acm_proc_article-sp}
 \documentclass[11pt, twocolumn]{article}
-\setlength{\columnsep}{30pt}
-\usepackage[margin=.7in]{geometry}
+\setlength{\columnsep}{35pt}
+\usepackage[left=.8in, right=.8in, top=1.1in, bottom=1.1in]{geometry}
+
 
 \usepackage{wrapfig}
 \usepackage{tikz, alex, url, mu}
@@ -13,7 +14,10 @@
 
 \title{Quilting for Distributed Machine Learning System}
 
-\author{Mu Li \\ CMU CSD \and Jinliang Wei\\ CMU CSD}
+\author{Mu Li \quad Jinliang Wei\\ Computer Science Department
+  \\Carnegie Mellon University\\
+  5000 Forbes Ave., Pittsburgh, PA, 15213\\
+\{muli, jingliangw\}@cs.cmu.edu}
 
 \begin{document}
 \maketitle
@@ -182,7 +186,7 @@ if $rm \approx cn$, the even partition scheme 3 is a better choice.
 
 \begin{figure*}[th!]
   \centering
-\begin{tikzpicture}[scale=.7]
+\begin{tikzpicture}[scale=.8]
   \draw [fill=set12!60](0,0) rectangle (4,1)
   rectangle (0,2) rectangle (4,3) rectangle (0,4);
   \draw[xshift=6cm, fill=set11!60] (0,0) rectangle (1,4) rectangle (2,0) rectangle (3,4)
@@ -238,12 +242,14 @@ neighbor rack.
   \caption{Distributed Pagerank with Grid topology}
   \label{algo:pr}
   \begin{algorithmic}[1]
-    \REQUIRE Assume $m\times m$ machines, grid partition of data. machine
+    \REQUIRE Assume $n\times m$ machines, grid partition of the $\ell \times \ell$
+    adjacent matrix. machine
     $m_{i,j}$  gets data block $X_{i,j}$, and weight block $w_i$.
 %    \ENSURE
     \FOR [asynchronous] {all machines in parallel}
     \FOR {$t=0,\ldots,T$}
-    \STATE compute $u_j \gets \alpha X_{i,j}^T D_{i,j}^{-1} w_i + (1-\alpha)\frac{1}{nm}$
+    \STATE compute $u_j \gets \alpha X_{i,j}^T D_{i,j}^{-1} w_i +
+    (1-\alpha)\frac{1}{\ell m}$
     \IF { $i=j$ }
     \STATE $w_i \gets u_j$
     \STATE send $w_i$ to machine $m_{i+1,i}$
@@ -260,7 +266,8 @@ neighbor rack.
   \caption{Distributed Pagerank with Tree-ring topology}
   \label{algo:pr2}
   \begin{algorithmic}[1]
-    \REQUIRE Assume $m\times m$ machines, grid partition of data. machine
+    \REQUIRE Assume $n\times m$ machines, grid partition of the $\ell \times \ell$
+    adjacent matrix. Machine
     $m_{i,j}$  gets data block $X_{i,j}$, and weight block $w_i$.
 %    \ENSURE
     \FOR [asynchronous] {all machines in parallel}
@@ -281,13 +288,69 @@ neighbor rack.
 
 Loss minimization solves the following optimization problem:
 \begin{equation}
-  \min_w \sum_{i=1}^{n} f(\langle x_i, w\rangle, y_i) + \lambda r(w)
+  \min_w F(w) = \sum_{i=1}^{n} f(\langle x_i, w\rangle, y_i) + \lambda r(w)
 \end{equation}
 
+Let consider the gradient descent as an example to solve this problem. On each
+iteration, gradient descent compute the gradients based on the current weight $w$.
 
-It fits into our setting by considering the primal-dual view, where $w$ is the primal
-variable, while $\partial f(\langle x_i, w\rangle, y_i) x_i$ is the dual. Then
-the optimization method computes and updates the prime and dual alternatively.
+\begin{align*}
+  \partial F(w) &= \partial \sum_{i=1}^{n}  f(\langle x_i, w\rangle, y_i) +
+  \lambda r(w) \\
+  &= \sum_{i=1}^{n} x_i \partial f(\langle x_i, w\rangle, y_i) +
+  \lambda \partial r(w)
+\end{align*}
+
+A new weight is computed as $w' = w - \eta \partial F(w)$, where $\eta$ is the
+learning rate. This algorithm fits into our system by the primal-dual
+viewpoint. The weight $w$ is the primal
+variable, and
+\begin{equation}
+  u = X w
+\end{equation}
+is treat as the dual variables.
+Then the gradient descent computes and updates
+the prime and dual alternatively. Furthermore, $\partial f$ is typically a
+scalar function with respect to the dual variables and labels. For square loss,
+we have
+\begin{align*}
+  f(u,y) & = \frac{1}{2} \|u-y\|^2, \\
+  \partial f(u,y) &= u-y \\
+\end{align*}
+    and for logistic loss:
+  \begin{align*}
+f(u,y) & = \log(1+\exp(-y u))  \\
+  \partial f(u,y) &= \frac{1}{1 + y\exp(-yu)}
+\end{align*}
+
+
+
+\begin{algorithm}[tb]
+  \caption{Distributed Pagerank with Tree-ring topology}
+  \label{algo:loss}
+  \begin{algorithmic}[1]
+    \REQUIRE Assume $n \times m$ machines, grid partition of data. machine
+    $m_{i,j}$  gets data block $X_{i,j}$, and weight block $w_j$.
+%    \ENSURE
+    \FOR [asynchronous] {all machines in parallel}
+    \FOR {$t=0,\ldots,T$}
+    \STATE compute dual variable $u_i \gets X_{i,j} w_j$
+    \IF {$i=j$}
+    \STATE machine $m_{i,i}$ gathers all $u_i$ from machine $m_{i,1}, \ldots,
+    m_{i,n}$. We may ignore the results of lowest machine or allow delayed
+    results to improve the performance of this aggregator
+    \STATE broadcast $\partial f(u_i, y_i)$
+    \ELSE
+    \STATE send $u_i$ to machine $m_{i,i}$
+    \ENDIF
+    \STATE compute delta $\delta_j = X_{i,j}^T \partial +
+    \frac{\lambda}{n} \partial r(w)$
+    \STATE send $\delta_j$ to machine $m_{i+1,j}$
+    \STATE apply delta $w \gets w - \eta \delta_j$
+    \ENDFOR
+    \ENDFOR
+  \end{algorithmic}
+\end{algorithm}
 
 \section{Programming Model}
 
@@ -424,14 +487,16 @@ NodeConfig:
   \caption{Sample network topology configuration}
 \end{figure}
 
-Figure
+Figure~\ref{fig:topo1} and Figure~\ref{fig:topo2} show some common network
+topologies.
 
 \begin{figure*}[th!]
   \centering
   \includegraphics[width=.4\textwidth]{fig/ring}
   \hspace{4ex}
   \includegraphics[width=.4\textwidth]{fig/tree}
-  \caption{}
+  \caption{Ring and Tree}
+  \label{fig:topo1}
 \end{figure*}
 
 
@@ -440,7 +505,8 @@ Figure
   \includegraphics[width=.4\textwidth]{fig/ring_ring}
   \hspace{4ex}
   \includegraphics[width=.4\textwidth]{fig/ring_tree}
-  \caption{}
+  \caption{Grid and A combination of ring and tree}
+  \label{fig:topo2}
 \end{figure*}
 
 \section{Implementation}
@@ -449,7 +515,7 @@ minimize communication cost.
 
 \begin{figure*}[th!]
   \centering
-  \includegraphics[width=.7\textwidth]{fig/propagator-receiver.pdf}
+  \includegraphics[width=.8\textwidth]{fig/propagator-receiver.pdf}
   \caption{Single Node Architecture}
   \label{fig:prop-recv}
 \end{figure*}
@@ -553,6 +619,7 @@ One key experiment will be comparing running time versus objective value, under
 different network configurations. We expect that MPI is the least efficient
 system, because of the synchronous communication. QuiltDB may outperform
 parameter server, especially for very large dataset but poor network.
+
 
 % \appendix
 % \section{Acknowledgements}
