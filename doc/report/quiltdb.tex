@@ -8,6 +8,9 @@
 \usetikzlibrary{arrows,shapes,snakes,automata,backgrounds,petri}
 \tikzset{>=stealth}
 
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
 \title{Quilting for Distributed Machine Learning System}
 
 \author{Mu Li \\ CMU CSD \and Jinliang Wei\\ CMU CSD}
@@ -32,24 +35,26 @@
 In distributed machine learning applications, data,  as well as computation, are
 partitioned into hundreds or  thousands of machines. Those
 worker machines compute local results based on their own part of data. Global solutions
-are then obtained via synchronization.
+are then obtained via synchronization distribute \cite{AhmSheNarJosSmo13,
+  HoCipCuiLeeetal13,Lietal13,DeaCorMonCheetal12,GonLowGuBicetal12,CheSonBaiLinetal11}.
 
 Machine synchronization, including data communication and waiting, is typically
 the most expensive operation, because of limited network bandwidth and highly
 variant machine performances. Recently, asynchronous communication is proposed
 to hide the synchronization cost, however, those works assume the network has
-uniform point-to-point bandwidth.
+uniform point-to-point bandwidth \cite{AsuSmyWel08,SmoNar10,AhmSheNarJosSmo13,Lietal13}.
 
-However, the real data datacenter network usually has specially topology. For
-example, machines are grouped by ranks, and those ranks are then connected by
-several layers of switchers. It thus forms a (multi-)tree like
-topology. Machines within a rack has much larger bandwidth than crossing racks.
+However, the real data center network usually has special topology. For
+example, machines are typically grouped by ranks, and ranks are then connected by
+several layers of switches to form a multi-rooted tree structure. The bandwidth
+within a leaf node (in a rack) is usually much larger than the average
+bandwidth.
 
-It is necessary to consider the network topology, because of the huge amount of
-data communication volume and iterative nature of  machine learning
-applications. In addition, if the communication forms a simple pattern, such as
-a ring or a start, then it is much easier to improve the machine network
-according this to pattern than improve the overall point-to-point bandwidth.
+Machine learning applications should consider the network topology, because of
+its huge amount of data communication volume and iterative nature. In addition,
+if the communication forms a simple pattern, such as a ring or a start, then it
+is much easier to improve the machine network according this to pattern than
+improve the overall point-to-point bandwidth.
 
 On this paper, we propose a database execute engine, QuiltDB, which mapping
 machine learning applications into network topologies. Key features of this
@@ -81,39 +86,65 @@ and provide fault tolerance and elastic scalability.
 \subsection{Grid Communication}
 
 Grid is the one of the simplest communication pattern, which is shown in
-Figure~\ref{fig:grid2}. Machines are connected both vertically and
-horizontally. Each machine only communicates with its 4 neighbors. Its
-restricted connections make it comparable cheap to build the physical
-network. It also relieves switchers' burden on the cloud computing setting.
-However, if the two machines are far away, then the network delay between these
-two is also large.
+Figure~\ref{fig:grid2} \cite{DeeBlyGilKesetal04, FosZhaRaiLu08}. Machines are connected both vertically and
+horizontally. Each node only communicates with its vertical and horizontal
+neighbors. In physical, neighbors nodes are directly connected, or sitting
+near-by each other, e.g.~within the same rack,  so that high network bandwidth
+between neighbor node are guaranteed. One big advantage of grid communication is
+the low cost of building its network. If each machine have hour network ports,
+then expensive switchs are even not necessary. On the other hand, this
+communication pattern explicitly uses network space locality, so it is also
+suitable for high network traffic volume applications, if the physical network
+is not good enough.
+
+However, if two nodes are not connected directly, then they communicate via
+other nodes. This path is possible long and then so might be the delay. For
+example, in a $n\times n$ grid, and assume $\tau$ the RTT  between
+two neighbor nodes, then the RTT between the left-upper corner node and
+right-bottom node is $2n\tau$.
 
 \begin{figure}[th!]
   \centering
-  \includegraphics[width=.4\textwidth]{fig/grid}
-  \caption{Grid communication}
+  \includegraphics[width=.45\textwidth]{fig/grid}
+  \caption{Grid communication. Each machine only communicates with its 4
+    neighbors, and typically enjoys high network bandwidth. However, the network
+  delay might be large if two nodes are far away.}
   \label{fig:grid2}
 \end{figure}
 
-\subsection{Two-layer Network}
+\subsection{Data Center Topologies}
 
-The grid communication is somewhat too restrictive. Nowadays machines within a
-datacenter are typically first connected by top-rack switchers. Due to the high
-bandwidth in a switcher, machines in the same rack usually have decent
-point-to-point bandwidth. Therefore we may use more flexible within rack
-communication pattern. Figure~\ref{fig:rack} shows a simple example, where
-machines only talk to the others in the neighbor rack, while any two machines
-within the same rack could communicate.
+The real network in a data
+center nowadays usually has a tree-like structure. Machines are first connected
+by the top of rack switch and typically enjoy high bandwidth if two machines
+shared the same switch. Racks are then connected by end of row and core
+switches. Due to the large number of racks (10---100), cost, energy consuming,
+and cabling complexity, it is hard to have full bisection bandwidth. A typical
+oversubscription ratio is between 2:1 to 8:1, which means the average bandwidth
+between two racks is typically much less than the one within a
+rack~\cite{AlFLouVah08, BarHol09}.
+
+The grid communication is somewhat too restrictive. However, the all-to-all
+communication place too much burden to end of row and core switches. A hybrid
+communication, shown in Figure~\ref{fig:rack}, combines the advantages of the
+previous two. Due to the high
+inner switch bandwidth, machines in the same rack can communicate to each other
+in a flexible way. However, we restrict the connections crossing racks. In other
+words, we first place all racks sides by sides, then we let all machines
+communicate to their horizontal neighbors only.
+
+
 \begin{figure}[th!]
   \centering
-  \includegraphics[width=.25\textwidth]{fig/rack}
-  \caption{More flexible within rack communication.}
+  \includegraphics[width=.45\textwidth]{fig/rack}
+  \caption{Flexible connections within a rack, while restrict the communication
+    between racks. }
   \label{fig:rack}
 \end{figure}
 
 \section{Machine Learning Applications}
 
-On this section, we describe several machine learning applications which fits
+In this section, we describe several machine learning applications which fits
 into the communication pattern we discussed on Section
 \ref{sec:network-topologies}.
 
@@ -149,9 +180,9 @@ $a = \rbr{ \frac{cn}{rm} }^{\frac{1}{2}}\sqrt{p}$. That is, if $cn \gg rm$, we
 should choose partition scheme 1, if $rm \gg cn$, we should use scheme 2, while
 if $rm \approx cn$, the even partition scheme 3 is a better choice.
 
-\begin{figure}[th!]
+\begin{figure*}[th!]
   \centering
-\begin{tikzpicture}[scale=.5]
+\begin{tikzpicture}[scale=.7]
   \draw [fill=set12!60](0,0) rectangle (4,1)
   rectangle (0,2) rectangle (4,3) rectangle (0,4);
   \draw[xshift=6cm, fill=set11!60] (0,0) rectangle (1,4) rectangle (2,0) rectangle (3,4)
@@ -160,7 +191,7 @@ if $rm \approx cn$, the even partition scheme 3 is a better choice.
   \draw[xshift=14cm, fill=set13!60] (0,0) rectangle (2,2) rectangle (0,4);
 \end{tikzpicture}
   \caption{partition scheme 1 to 3: $a=4,b=1$, $a=1,b=4$, and $a=2,b=2$}
-\end{figure}
+\end{figure*}
 
 \subsection{Pagerank}
 \label{sec:pagerank}
@@ -174,8 +205,9 @@ adjacent matrix, then pagerank can be solved by.
 
 \begin{figure}[th!]
   \centering
-  \includegraphics[width=.25\textwidth]{fig/pr}
-  \caption{Pagerank}
+  \includegraphics[width=.4\textwidth]{fig/pr}
+  \caption{Pagerank, we explicit decompose the workload into two step. First
+    compute a new value of $w$ (green arrow), and then update $w$ (blue arrow).}
   \label{fig:pr}
 \end{figure}
 
@@ -184,17 +216,66 @@ updating as two steps, the
 first step compute the new value of $w$, and then update $w$. To extend pagerank
 into a distributed algorithm, we consider the grid data partition. Then each
 machine also execute the computing and then updating steps. The only difference
-is that updating involves network communications. On the example, each rack get
-a group of columns of $X$. One particular  machine in the rack gathers the
-updates within the rack and then propagates to other racks.
+is that updating involves network communications.
 
-\begin{figure}[th!]
+Figure~\ref{fig:dist_pr} shows an distributed implementation using the grid
+communication. While Figure~\ref{fig:dist_pr2} shows a version using the
+tree-ring topology. In other words, each rack get a group of columns of $X$. All
+machines in a rack form a tree, one particular machine is selected as a
+root. This root gathers all updates within the rack and then propagates to its
+neighbor rack.
+
+\begin{figure*}[th!]
   \centering
-  \includegraphics[width=.25\textwidth]{fig/compute}
-  \includegraphics[width=.25\textwidth]{fig/update}
-  \caption{Two steps of pagerank: compute and then update}
-\end{figure}
+  \includegraphics[width=.4\textwidth]{fig/compute} \hspace{4ex}
+  \includegraphics[width=.4\textwidth]{fig/update}
+  \caption{Distributed Pagerank using a hybrid topology. Left: compute; right update}
+  \label{fig:dist_pr}
+\end{figure*}
 
+
+\begin{algorithm}[tb]
+  \caption{Distributed Pagerank with Grid topology}
+  \label{algo:pr}
+  \begin{algorithmic}[1]
+    \REQUIRE Assume $m\times m$ machines, grid partition of data. machine
+    $m_{i,j}$  gets data block $X_{i,j}$, and weight block $w_i$.
+%    \ENSURE
+    \FOR [asynchronous] {all machines in parallel}
+    \FOR {$t=0,\ldots,T$}
+    \STATE compute $u_j \gets \alpha X_{i,j}^T D_{i,j}^{-1} w_i + (1-\alpha)\frac{1}{nm}$
+    \IF { $i=j$ }
+    \STATE $w_i \gets u_j$
+    \STATE send $w_i$ to machine $m_{i+1,i}$
+    \ELSE
+    \STATE send $u_j$ to machine $m_{i,j+1}$
+    \ENDIF
+    \ENDFOR
+    \ENDFOR
+  \end{algorithmic}
+\end{algorithm}
+
+
+\begin{algorithm}[tb]
+  \caption{Distributed Pagerank with Tree-ring topology}
+  \label{algo:pr2}
+  \begin{algorithmic}[1]
+    \REQUIRE Assume $m\times m$ machines, grid partition of data. machine
+    $m_{i,j}$  gets data block $X_{i,j}$, and weight block $w_i$.
+%    \ENSURE
+    \FOR [asynchronous] {all machines in parallel}
+    \FOR {$t=0,\ldots,T$}
+    \STATE compute $u_j \gets \alpha X_{i,j}^T D_{i,j}^{-1} w_i + (1-\alpha)\frac{1}{nm}$
+    \IF { $i=j$ }
+    \STATE $w_i \gets u_j$
+    \STATE send $w_i$ to machine $m_{i+1,i}$
+    \ELSE
+    \STATE send $u_j$ to machine $m_{i,i}$
+    \ENDIF
+    \ENDFOR
+    \ENDFOR
+  \end{algorithmic}
+\end{algorithm}
 \subsection{Loss minimization}
 
 Loss minimization solves the following optimization problem:
@@ -243,13 +324,14 @@ class Table{
   void Inc(int64_t _key, ValueType _delta);
 };
 
-typedef int (*ValueAddFunc)(uint8_t *v1,
-                            const uint8_t *v2,
-                            int32_t size);
-typedef int (*ValueSubFunc)(uint8_t *v1,
-                            const uint8_t *v2,
-                            int32_t size);
-
+typedef int (*ValueAddFunc) (
+  uint8_t *v1,
+  const uint8_t *v2,
+  int32_t size);
+typedef int (*ValueSubFunc) (
+  uint8_t *v1,
+  const uint8_t *v2,
+  int32_t size);
 \end{verbatim}
 \caption{Semantics of QuiltDB table APIs and the addition and subtraction
   functions}
@@ -293,12 +375,12 @@ copy, 2)forward them to downstream node and 3) execute user callback.
 In this section, we discuss our system implementation along with techniques to
 minimize communication cost.
 
-\begin{figure}[th!]
+\begin{figure*}[th!]
   \centering
-  \includegraphics[width=.5\textwidth]{fig/propagator-receiver.pdf}
+  \includegraphics[width=.7\textwidth]{fig/propagator-receiver.pdf}
   \caption{Single Node Architecture}
   \label{fig:prop-recv}
-\end{figure}
+\end{figure*}
 
 \subsection{Propagator-Receiver Pair}
 
@@ -377,7 +459,7 @@ features.
 
 We evaluate our system on PDL's cluster Susitna, which has 36 machines in
 total. Each machine has 64 AMD cores and 128G memory. All machines are connected
-to a single top-rack switcher.
+to a single top-rack switch.
 
 We compare our system against two other two systems. One is a standard BSP
 model implemented by MPI. The communication is done by AllReduce, which merges
@@ -405,7 +487,8 @@ parameter server, especially for very large dataset but poor network.
 % The authors would like thank to Alex Smola, Dave Andersen (potentially more...)
 % for helpful discussion.
 
-\bibliography{ref}
-\bibliographystyle{abbrvnat}
+%\bibliography{ref}
+\bibliography{../../../bibfile/bibfile}
+\bibliographystyle{plain}
 
 \end{document}
