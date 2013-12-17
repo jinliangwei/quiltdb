@@ -23,41 +23,43 @@
 \maketitle
 
 \begin{abstract}
-  Distributed machine learning applications produces a huge amount of network
-  traffic. However, network bandwidth is one of the most scarce resources of
-  datacenters.  In this paper we proposal QuiltDB, a distributed database
-  execution engine optimized for network topology. QuiltDB trades off latency
-  for high bandwidth. It executes as a discrete streaming system but with the
-  difference that
-  users can specify desirable network topologies. We evaluate this system on
-  several machine learning applications with real datasets\footnote{C++ codes
+  Distributed machine learning applications produce a huge amount of network
+  traffic. However, network bandwidth is one of the most scarce resources in
+  data centers.  In this paper we propose QuiltDB, which is a distributed
+  database execution engine optimized for network topology. QuiltDB trades off
+  latency for high bandwidth. It executes as a discrete streaming system and
+  allow users to specify desirable network topologies. We evaluate this system
+  on several machine learning applications with real datasets\footnote{C++ codes
     are available at \url{https://github.com/jinliangwei/quiltdb/}}.
 \end{abstract}
 
 \section{Introduction}
 
-In distributed machine learning applications, data,  as well as computation, are
+In distributed machine learning applications, both data and computations are
 partitioned into hundreds or  thousands of machines. Those
 worker machines compute local results based on their own part of data. Global solutions
-are then obtained via synchronization distribute \cite{AhmSheNarJosSmo13,
+are then obtained via synchronization \cite{AhmSheNarJosSmo13,
   HoCipCuiLeeetal13,Lietal13,DeaCorMonCheetal12,GonLowGuBicetal12,CheSonBaiLinetal11}.
 
-Machine synchronization, including data communication and waiting, is typically
-the most expensive operation, because of limited network bandwidth and highly
-variant machine performances. Recently, asynchronous communication is proposed
-to hide the synchronization cost, however, those works assume the network has
-uniform point-to-point bandwidth \cite{AsuSmyWel08,SmoNar10,AhmSheNarJosSmo13,Lietal13}.
+Synchronization, including data communication and waiting the slowest machine, is typically
+the most expensive operation, because of the limited network bandwidth and highly
+variant machine performances. Recently, asynchronous computation is proposed
+to hide this synchronization cost. However, they assume the network has fully
+bisection bandwidth \cite{AsuSmyWel08,SmoNar10,AhmSheNarJosSmo13,Lietal13}.
 
-However, the real data center network usually has special topology. For
-example, machines are typically grouped by ranks, and ranks are then connected by
-several layers of switches to form a multi-rooted tree structure. The bandwidth
-within a leaf node (in a rack) is usually much larger than the average
-bandwidth.
+On practice, the real data center network has special topologies. One common
+topology is the multi-rooted tree, where  machines are first grouped by racks,
+and these racks are then connected by
+end of row and core switches. The network bandwidth in this tree is not
+uniform. Typically bandwidth within a leaf node (a rack) is usually much larger
+than the others~\cite{AlFLouVah08, BarHol09}.
 
 Machine learning applications should consider the network topology, because of
-its huge amount of data communication volume and iterative nature. In addition,
-if the communication forms a simple pattern, such as a ring or a start, then it
-is much easier to improve the machine network according this to pattern than
+its huge amount of data communication volume and iterative nature. A proper
+communication pattern could reduce the network congestion, e.g.~core switches,
+and therefore reduce the waiting time. In addition,
+if the communication forms a simple pattern, such as a ring or a star, then it
+is much easier to improve the physical network according this to pattern than
 improve the overall point-to-point bandwidth.
 
 On this paper, we propose a database execute engine, QuiltDB, which mapping
@@ -66,15 +68,18 @@ system includes,
 
 \begin{itemize*}
 \item Grid data partition. Traditional databases uses either vertical or
-  horizontal partition. However, a grid partition could reduce the network
+  horizontal partitions. However, a grid partition could reduce the network
   traffic volume if the training data is near square, namely the number of
   instances and features are on the same scale.
 \item Model machine learning applications using the
   primal-dual approach. The primal-dual decomposition fits into the grid
   partition in nature, where the primal variables are shared horizontally, while
   the dual variables are communicated vertically.
-\item Allow use-defined network topology.
-\item A discrete streaming system.
+\item Allow use-defined network topology. QuiltDB allows user to configure the
+  logical network connection.
+\item A discrete streaming system. QuiltDB is implemented as a discrete
+  streaming system. Different to previous system, QuiltDB merging keys (similar
+  to reduce) at every node, and also allow loop exists in the stream.
 \end{itemize*}
 
 \section{Network Topologies}
@@ -94,16 +99,16 @@ Figure~\ref{fig:grid2} \cite{DeeBlyGilKesetal04, FosZhaRaiLu08}. Machines are co
 horizontally. Each node only communicates with its vertical and horizontal
 neighbors. In physical, neighbors nodes are directly connected, or sitting
 near-by each other, e.g.~within the same rack,  so that high network bandwidth
-between neighbor node are guaranteed. One big advantage of grid communication is
+between neighbor nodes are guaranteed. One advantage of grid communication is
 the low cost of building its network. If each machine have hour network ports,
-then expensive switchs are even not necessary. On the other hand, this
+then expensive switches are not even necessary. On the other hand, this
 communication pattern explicitly uses network space locality, so it is also
 suitable for high network traffic volume applications, if the physical network
 is not good enough.
 
-However, if two nodes are not connected directly, then they communicate via
-other nodes. This path is possible long and then so might be the delay. For
-example, in a $n\times n$ grid, and assume $\tau$ the RTT  between
+However, if two nodes are not connected directly, then they need to communicate via
+other nodes. This path is possible long,  so the delay might be high. For
+example, in a $n\times n$ grid, and denote by $\tau$ the RTT  between
 two neighbor nodes, then the RTT between the left-upper corner node and
 right-bottom node is $2n\tau$.
 
@@ -128,10 +133,10 @@ oversubscription ratio is between 2:1 to 8:1, which means the average bandwidth
 between two racks is typically much less than the one within a
 rack~\cite{AlFLouVah08, BarHol09}.
 
-The grid communication is somewhat too restrictive. However, the all-to-all
-communication place too much burden to end of row and core switches. A hybrid
+The grid communication is somewhat too restrictive in the data center environment. However, the all-to-all
+communication places too much burden to end of row and core switches. A hybrid
 communication, shown in Figure~\ref{fig:rack}, combines the advantages of the
-previous two. Due to the high
+previous two patterns. Due to the high
 inner switch bandwidth, machines in the same rack can communicate to each other
 in a flexible way. However, we restrict the connections crossing racks. In other
 words, we first place all racks sides by sides, then we let all machines
