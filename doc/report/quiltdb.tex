@@ -100,7 +100,7 @@ horizontally. Each node only communicates with its vertical and horizontal
 neighbors. In physical, neighbors nodes are directly connected, or sitting
 near-by each other, e.g.~within the same rack,  so that high network bandwidth
 between neighbor nodes are guaranteed. One advantage of grid communication is
-the low cost of building its network. If each machine have hour network ports,
+the low cost of building its network. If each machine have four network ports,
 then expensive switches are not even necessary. On the other hand, this
 communication pattern explicitly uses network space locality, so it is also
 suitable for high network traffic volume applications, if the physical network
@@ -362,7 +362,7 @@ f(u,y) & = \log(1+\exp(-y u))  \\
 QuiltDB provides a distributed in-memory key-value store for accessing shared
 data. Key-value pairs are organized as tables and tables are shared among
 nodes along the same \emph{oplog propagation path}. Updates to shared key-value
-pairs are propagated along {oplog propagation path}s. Typically, a QuiltDB
+pairs are propagated along \emph{oplog propagation path}s. Typically, a QuiltDB
 process occupies a physical node and it
 consists of multiple \emph{logical node}s. Each \emph{logical node} may
 participate in one \emph{oplog propagation path}. That is, a \emph{logical node}
@@ -416,19 +416,19 @@ typedef int (*ValueSubFunc) (
 \subsection{Key-Value Interface}
 
 As mentioned above, the data stored in QuiltDB are key-value pairs organized
-as tables. Values are treated as byte array internally and values stored in one
+as tables. Values are treated as byte arrays internally and values stored in one
 table are required to have the same size. Supporting multiple tables allows
 QuiltDB to support different types of data.
 
 QuiltDB requires the value type to support two operations, \emph{addition} and
-\emph{subtraction}. In order to support update aggregation, {addition} must
+\emph{subtraction}. In order to support update aggregation, \emph{addition} must
  be commutative and associative. For numerical types,  the meaning of
-{addition} and {substraction} are straightforward. The interface of
+\emph{addition} and \emph{substraction} are straightforward. The interface of
 QuiltDB tables and the semantics of addition and subtractions are shown in
 Figure~\ref{fig:table-api}.
 
 The only write operation supported by the key-value storage is INC which takes
-in a delta and apply the delta to a value via {addition}.
+in a delta and apply the delta to a value via \emph{addition}.
 
 \subsection{Callback Functions}
 \label{sec:callback}
@@ -469,11 +469,12 @@ central master to coordinate the termination of all process.
 Typical machine learning applications terminate either when it reaches certain 
 number of iterations or when certain objective function converges. When one
 process reaches the termination conditin and exits, it breaks up the \emph{update
-propagation path}. This is a less severe problem in iteration-based terminations
+propagation path} that it participates in. This is a less severe problem in 
+iteration-based terminations
 as other process will eventually reach certain iteration number and terminate. 
 This problem is more severe in objective-value-based terminations. Some 
 process might never be able to converge if they do not receive the updates from 
-their peers that terminate early. It is in our future work to add a master in 
+their peers that terminate earlier. It is in our future work to add a master in 
 the system to coordinate the termination of workers.
 
 \subsection{User-defined Topology}
@@ -564,10 +565,10 @@ minimize communication cost.
 Typically, each physical node runs one QuiltDB process. The architecture of a single
 QuiltDB process is visualized in Fig~\ref{fig:prop-recv}.  The QuiltDB process
 contains a set of application threads which execute application procedures and
-access the distributed paramters via the QuiltDB stub, which consists of one
-or multiple \emph{logical node}s.
+access the distributed paramters via the QuiltDB stub. The QuiltDB stub consists 
+of one or multiple \emph{logical node}s.
 
-The core of a QuiltDB \emph{logical nodes} is a paired propagator-receiver
+The core of a QuiltDB \emph{logical node}s is a paired propagator-receiver
 structure. Namely the propagator-receiver pair consists
 of a receiver, a propagator and a set of tables registered with this
 \emph{logical node}. The \emph{logical node} serves read and write accesses to
@@ -618,13 +619,11 @@ its own updates and remove them before performing other actions upon the
 received updates.
 
 
-
-
 \section{Experiments}
 
 \subsection{Setup}
 
-We will evaluate two algorithm. One is pagerank, the other one is logistic
+We will evaluate two algorithms. One is pagerank, the other one is logistic
 regression, a loss minimization algorithm with logit loss. The latter is still
 under developing. We use two large scale real datasets. One is the hyperlink
 graph\footnote{\url{http://webdatacommons.org/hyperlinkgraph/}}, which consists
